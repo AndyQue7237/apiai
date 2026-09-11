@@ -1,0 +1,52 @@
+[
+  {
+    "brand": "Paged",
+    "chair": "Stol PL-0045A Shell.png",
+    "status": "ok",
+    "mask_ok": true,
+    "mask_area_pct": 16.53,
+    "mask_drift_px": 2.0,
+    "warnings": [],
+    "output_dir": "/Users/andreasquensel/Library/CloudStorage/GoogleDrive-andreas@zebrolabs.com/Shared drives/Apiai.me/Customers/AZ Design/Content/Paged/Masks/Stol PL-0045A Shell_maskzip"
+  },
+  {
+    "brand": "Paged",
+    "chair": "Stol PL-1830B.png",
+    "status": "ok",
+    "mask_ok": true,
+    "mask_area_pct": 8.14,
+    "mask_drift_px": 1.0,
+    "warnings": [],
+    "output_dir": "/Users/andreasquensel/Library/CloudStorage/GoogleDrive-andreas@zebrolabs.com/Shared drives/Apiai.me/Customers/AZ Design/Content/Paged/Masks/Stol PL-1830B_maskzip"
+  },
+  {
+    "brand": "Paged",
+    "chair": "Stol PL-1870A.png",
+    "status": "ok",
+    "mask_ok": true,
+    "mask_area_pct": 7.3,
+    "mask_drift_px": 2.8,
+    "warnings": [],
+    "output_dir": "/Users/andreasquensel/Library/CloudStorage/GoogleDrive-andreas@zebrolabs.com/Shared drives/Apiai.me/Customers/AZ Design/Content/Paged/Masks/Stol PL-1870A_maskzip"
+  },
+  {
+    "brand": "Tailerd",
+    "chair": "black_chair.jpg",
+    "status": "ok",
+    "mask_ok": true,
+    "mask_area_pct": 3.93,
+    "mask_drift_px": 1.4,
+    "warnings": [],
+    "output_dir": "/Users/andreasquensel/Library/CloudStorage/GoogleDrive-andreas@zebrolabs.com/Shared drives/Apiai.me/Customers/AZ Design/Content/Tailerd/Masks/black_chair_maskzip"
+  },
+  {
+    "brand": "Tailerd",
+    "chair": "solid_chair.jpg",
+    "status": "ok",
+    "mask_ok": true,
+    "mask_area_pct": 12.09,
+    "mask_drift_px": 2.2,
+    "warnings": [],
+    "output_dir": "/Users/andreasquensel/Library/CloudStorage/GoogleDrive-andreas@zebrolabs.com/Shared drives/Apiai.me/Customers/AZ Design/Content/Tailerd/Masks/solid_chair_maskzip"
+  }
+]

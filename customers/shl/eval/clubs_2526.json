@@ -1,0 +1,104 @@
+{
+  "season": "25/26",
+  "psd_filename": "Original All Clubs.psd",
+  "clubs": [
+    {
+      "id": "skellefteå",
+      "name": "SKELLEFTEÅ AIK",
+      "color": "#d22030",
+      "date_text": "11-13 NOVEMBER",
+      "date_label": "13 nov"
+    },
+    {
+      "id": "luleå",
+      "name": "LULEÅ HOCKEY",
+      "color": "#d10a11",
+      "date_text": "5-7 MARS",
+      "date_label": "5 MARS"
+    },
+    {
+      "id": "timrå",
+      "name": "TIMRÅ IK",
+      "color": "#cd1719",
+      "date_text": "21-23 OKTOBER",
+      "date_label": "23 okt"
+    },
+    {
+      "id": "brynäs",
+      "name": "BRYNÄS IF",
+      "color": "#fdcb00",
+      "date_text": "26-28 FEBRUARI",
+      "date_label": "26 FEB"
+    },
+    {
+      "id": "örebro",
+      "name": "ÖREBRO HK",
+      "color": "#000000",
+      "date_text": "18-20 NOVEMBER",
+      "date_label": "20 NOV"
+    },
+    {
+      "id": "linköping",
+      "name": "LINKÖPING HC",
+      "color": "#003c8a",
+      "date_text": "25-27 NOVEMBER",
+      "date_label": "27 nov"
+    },
+    {
+      "id": "hv71",
+      "name": "HV71",
+      "color": "#f7d716",
+      "date_text": "2-4 DECEMBER",
+      "date_label": "4 dec"
+    },
+    {
+      "id": "växjö",
+      "name": "VÄXJÖ LAKERS",
+      "color": "#cc1f2e",
+      "date_text": "17-19 FEBRUARI",
+      "date_label": "19 feb"
+    },
+    {
+      "id": "malmö",
+      "name": "MALMÖ REDHAWKS",
+      "color": "#cc1f2e",
+      "date_text": "5-7 MARS",
+      "date_label": "5 Mar"
+    },
+    {
+      "id": "rögle",
+      "name": "RÖGLE BK",
+      "color": "#2a8c4a",
+      "date_text": "27-29 JANUARI",
+      "date_label": "29 jan"
+    },
+    {
+      "id": "frölunda",
+      "name": "FRÖLUNDA HC",
+      "color": "#002d72",
+      "date_text": "20-22 JANUARI",
+      "date_label": "22 jan"
+    },
+    {
+      "id": "färjestad",
+      "name": "FÄRJESTAD BK",
+      "color": "#006338",
+      "date_text": "16-18 DECEMBER",
+      "date_label": "18 dec"
+    },
+    {
+      "id": "djurgården",
+      "name": "DJURGÅRDEN HOCKEY",
+      "color": "#d22030",
+      "date_text": "13-15 JANUARI",
+      "date_label": "15 Jan"
+    },
+    {
+      "id": "björklöven",
+      "name": "BJÖRKLÖVEN",
+      "color": "#1d6b2a",
+      "date_text": "23-25 SEPTEMBER",
+      "date_label": "25 sep"
+    }
+  ]
+}

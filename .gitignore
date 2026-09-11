@@ -1,0 +1,22 @@
+# Environment
+.env
+.venv/
+venv/
+__pycache__/
+*.pyc
+
+# Output folders (generated images, reports)
+out/
+**/out/
+**/smoke_out/
+
+# Scratch work (temporary experiments)
+scratch/
+**/scratch/
+
+# OS
+.DS_Store
+
+# IDE
+.idea/
+.vscode/

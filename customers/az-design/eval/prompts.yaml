@@ -1,0 +1,170 @@
+# AZ Design - Chair Variant Generation Prompts
+# Used with Gemini nano-banana-pro-preview (Gemini 2.0)
+#
+# Input: Image 1 = Base chair, Image 2 = Material sample (bets/fabric)
+
+model: nano-banana-pro-preview
+eval_model: gemini-2.0-flash
+
+# =============================================================================
+# BETS (Wood Stain) - Changes wooden surfaces
+# =============================================================================
+bets:
+  name: "Wood Stain / Bets"
+  description: "Changes the wood color/stain while preserving fabric"
+
+  prompt: |
+    A photorealistic product photograph of the specific chair from Image 1,
+    demanding absolute, form-deviation-free geometric and structural lock.
+    Crucially, strictly maintain the exact spatial relationship between wood
+    and fabric; do not add, remove, or hallucinate any new wooden borders,
+    frames, or panels that change the existing upholstery edge-work. If fabric
+    extends fully to the edge in Image 1, it must remain fabric-to-edge in the
+    output. Perform a surgical, procedural material replacement exclusively on
+    the entire existing wooden surface area. This new stained wood finish must
+    be procedurally derived from the specific color, texture, and grain
+    characteristics strictly from Image 2. Maintain an absolute and literal
+    chromatic lock, where the wood's specific hue, saturation, value, and
+    precise color temperature must be procedurally replicated from the sample
+    in Image 2. The upholstery must remain completely unchanged from Image 1.
+    The new finish must wrap naturally around the chair's form with appropriate
+    volumetric lighting and shadows. Isolated on a flawless, seamless, 100%
+    non-textured pure white void background with perfectly integrated shadows.
+
+  eval_prompt: |
+    As a professional product photography auditor, compare the Generated Output
+    (Image 3) against the Reference Chair (Image 1) and the Wood Stain Sample
+    (Image 2). Provide a JSON response based on these criteria:
+
+    GEOMETRY_LOCK: Is the chair's shape and structure in Image 3 100% identical
+    to Image 1? (Yes/No)
+
+    WOOD_CHROMATIC_FIDELITY: Compare the wooden surface in Image 3 directly to
+    Image 2. Does it maintain the exact hue, saturation, and color temperature
+    of the stain sample? (Yes/No). Note: FAIL if the wood has shifted towards
+    an incorrect tint or if the finish looks like flat paint instead of stained
+    wood grain.
+
+    FABRIC_PRESERVATION: Is the upholstery/fabric in Image 3 100% identical in
+    color and texture to Image 1? (Yes/No). Note: FAIL if the fabric has been
+    'contaminated' or tinted by the new wood color.
+
+    GRAIN_REALISM: Does the new finish wrap naturally around the chair's 3D form
+    with realistic volumetric shadows and visible wood grain as per Image 2? (Yes/No)
+
+    BACKGROUND: Is the background in Image 3 a solid, 100% non-textured pure
+    white void (#ffffff)? (Yes/No)
+
+    Respond with ONLY valid JSON:
+    {
+      "GEOMETRY_LOCK": "Yes",
+      "WOOD_CHROMATIC_FIDELITY": "Yes",
+      "FABRIC_PRESERVATION": "Yes",
+      "GRAIN_REALISM": "Yes",
+      "BACKGROUND": "Yes",
+      "verdict": "PASS",
+      "reason": null
+    }
+
+  eval_criteria:
+    - key: GEOMETRY_LOCK
+      label: Geometry
+      description: Chair shape and structure identical to original
+    - key: WOOD_CHROMATIC_FIDELITY
+      label: Wood Color
+      description: Wood matches stain sample exactly, no tinting
+    - key: FABRIC_PRESERVATION
+      label: Fabric
+      description: Upholstery unchanged, no color contamination
+    - key: GRAIN_REALISM
+      label: Grain
+      description: Natural wood grain with realistic shadows
+    - key: BACKGROUND
+      label: Background
+      description: Pure white, isolated background
+
+# =============================================================================
+# FABRIC - Changes upholstered surfaces
+# =============================================================================
+fabric:
+  name: "Fabric / Upholstery"
+  description: "Changes cushion/backrest fabric while preserving wood"
+
+  prompt: |
+    Professional product photography of the chair from Image 1, demanding
+    absolute, form-deviation-free geometric and material preservation of the
+    entire non-cushioned structure. All components not listed as upholstered,
+    including the legs and frame, must retain their exact original material
+    integrity, color, and finish as seen in Image 1. This is a surgical
+    inpainting task: Identify all existing upholstered, cushioned, or padded
+    surfaces and perform a material replacement on all of these specific
+    identified areas using the exact texture, color, and pattern strictly from
+    Image 2. Crucially, maintain absolute chromatic fidelity; the material's
+    hue, saturation, and color temperature must remain identical to the source
+    sample in Image 2, strictly preventing any color shift, tinting, or
+    contamination from the ambient lighting or original colors of Image 1.
+    The surface of the new material must remain perfectly taut, pristine, and
+    smooth, strictly mirroring the precise spand and even surface tension of
+    the original components in Image 1, with zero added wrinkles, creases,
+    folds, or indentations. The entire chair must be isolated and centrally
+    focused on a flawless, seamless, solid, 100% non-textured pure white void
+    background with all original shadows perfectly integrated. Strictly forbid
+    any texture bleed, environmental mapping, or background pattern from Image 2.
+
+  eval_prompt: |
+    As a professional product photography auditor, compare the Generated Output
+    (Image 3) against the Reference Chair (Image 1) and the Reference Fabric
+    (Image 2).
+
+    Evaluate the following criteria and provide a JSON response:
+
+    GEOMETRY_LOCK: Is the chair's shape and structure in Image 3 100% identical
+    to Image 1? (Yes/No)
+
+    WOOD_INTEGRITY: Is the wood color and finish in Image 3 identical to Image 1,
+    with no color shifting or tinting? (Yes/No)
+
+    FABRIC_COVERAGE: Have ALL upholstered/padded areas from Image 1 been updated
+    with the fabric from Image 2? (Yes/No)
+
+    SURFACE_QUALITY: Is the fabric in Image 3 smooth and taut without unwanted
+    wrinkles or folds? (Yes/No)
+
+    BACKGROUND: Is the background in Image 3 100% pure white and isolated? (Yes/No)
+
+    COLOR_MATCH: Compare the fabric color in Image 3 directly to the sample in
+    Image 2. Does the output maintain the exact hue, saturation, and color
+    temperature? (Yes/No). Note: FAIL if there is any perceptible color shift
+    or tinting.
+
+    Respond with ONLY valid JSON:
+    {
+      "GEOMETRY_LOCK": "Yes",
+      "WOOD_INTEGRITY": "Yes",
+      "FABRIC_COVERAGE": "Yes",
+      "SURFACE_QUALITY": "Yes",
+      "BACKGROUND": "Yes",
+      "COLOR_MATCH": "Yes",
+      "verdict": "PASS",
+      "reason": null
+    }
+
+  eval_criteria:
+    - key: GEOMETRY_LOCK
+      label: Geometry
+      description: Chair shape and structure identical to original
+    - key: WOOD_INTEGRITY
+      label: Wood
+      description: Wood color and finish unchanged, no color shifting
+    - key: FABRIC_COVERAGE
+      label: Coverage
+      description: All upholstered areas updated with new fabric
+    - key: SURFACE_QUALITY
+      label: Surface
+      description: Fabric smooth and taut, no unwanted wrinkles
+    - key: BACKGROUND
+      label: Background
+      description: Pure white, isolated background
+    - key: COLOR_MATCH
+      label: Color
+      description: Fabric color matches sample exactly, no tinting
