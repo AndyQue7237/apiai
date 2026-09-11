@@ -2,6 +2,15 @@
 
 Scripts, pipelines, and evals for **apiai.me** — the image/vision processing platform.
 
+Workflow rules live in **`.claude/rules/`**. The always-apply project conventions are
+auto-loaded via the `@`-import below; the per-phase lifecycle guides (`01-explore` …
+`07-verify`, plus `run-evaluation`) are read when you enter that phase. Read this together
+with the root README and area-specific READMEs.
+
+@.claude/rules/00-project-conventions.md
+
+**New session?** Read **SESSION.md** first if it exists — it restores context (current focus, phase, what we did, what's next). Then read "Active Context" below.
+
 ## Before making changes
 
 1. **Read the guidelines** in `guidelines/`:
