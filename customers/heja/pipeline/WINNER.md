@@ -108,6 +108,15 @@ trogna routen. Kvalitetstest först sparar pengar och bevarar originalets integr
 
 **8. Enklare promptar vinner.** Tre meningar slog NB Pros sex numrerade regelblock.
 
+**9. Generativa modeller återskapar färger — de läser inte RGB.** Modellen "ser" bilden och ritar
+om den, den kopierar inte pixelvärden. Röda, guld och orange driftar mest (blir fluorescerande
+eller plattare). Om färgexakthet är viktigt: extrahera dominanta färger, jämför med original
+(ΔE i CIELAB), och byt tillbaka de som driftat. Se `correct_colors.py`.
+
+**10. Smart tolerans vid färgbyte.** När två liknande färger finns (t.ex. ljusblå och mörkblå)
+måste bytet vara precist. Använd ΔE/2 som tolerans — bara pixlar som ligger mycket nära
+målfärgen byts. Annars riskerar man att byta fel nyans.
+
 ## Cost
 
 | Modell | Per logga (generativ nod) |

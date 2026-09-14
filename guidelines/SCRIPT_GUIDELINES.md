@@ -203,3 +203,30 @@ Three gates, in order — the **node**, then the **platform**, then the **site**
 
 **The pipeline is separate.** Wiring the node into a multi-step flow (e.g.
 `removebg → node → convert`) is verified on its own, *after* the node itself passes.
+
+## 11. Generative models and color drift
+
+Generative image models (GPT Image, Gemini, Stable Diffusion, etc.) **recreate** images — they
+don't copy pixel values. The model "sees" the image and redraws it, which means:
+
+- **Colors can drift.** Reds, golds, and oranges are most affected — they often become more
+  saturated/fluorescent or shift hue. The model has no concept of "keep this exact RGB value."
+- **Black and white rarely drift.** These extremes are stable; exclude them from color analysis.
+- **Transparency is invisible.** A generative model sees an RGB image and guesses where the
+  background was. It cannot read the alpha channel of its input.
+
+**If color accuracy matters**, add a post-processing step that compares the output to a reference
+image (the original) and corrects drifted colors:
+
+1. Extract dominant colors from both images (k-means clustering, 12 clusters works well)
+2. For each significant color (>5% of pixels), find the closest match in the reference (ΔE in CIELAB)
+3. If ΔE > threshold (10 is a good default), replace the color with the reference color
+4. Use **smart tolerance** (ΔE/2) to avoid replacing similar-but-different colors (e.g., light
+   blue vs dark blue)
+
+**Practical notes:**
+- **12 k-means clusters** catches color variations without being too granular
+- **5% coverage threshold** filters out noise and minor colors
+- **ΔE interpretation:** 0-5 imperceptible, 5-10 noticeable, 10-15 obvious drift, 15+ severe
+
+See `scripts/correct_colors.py` for a reference implementation.

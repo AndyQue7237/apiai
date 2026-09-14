@@ -1,72 +1,83 @@
 # Session Memory — apiai
 
-Senast uppdaterad: 2026-09-11
+Senast uppdaterad: 2026-09-14
 
 ## Aktuellt fokus
 
-**Explore: GPT-2 färgdrift och color-correction**
+**Color correction — apiai.me node KLAR**
 
-Undersöker om GPT-2 ändrar färger på loggor och om vi kan korrigera det automatiskt.
+Scriptet `correct_colors.py` är skapat och testat. Redo att laddas upp till apiai.me.
 
-## Senaste sessionen (2026-09-11)
+## Senaste sessionen (2026-09-14)
 
 ### Vad vi gjorde
 
-1. **Skapade apiai-repot** — flyttade all apiai-kod från tools-repot hit
-   - Scripts, guidelines, customers/heja|az-design|shl
-   - Workflow rules (.claude/rules/)
-   - Städade tools-repot
+1. **Skapade apiai.me node** — `scripts/correct_colors.py`
+   - Tar emot genererad bild (body) + original (image_reference param)
+   - Parametrar: min_coverage (5%), min_delta_e (10), n_clusters (12)
+   - Testad lokalt på Cantagalo, Chicago, leopards — alla fungerar
 
-2. **Explore: Color drift-analys**
-   - Hypotes: GPT-2 konverterar till RGB → färger kan shifta → fixa genom att mappa tillbaka
-   - Testade på alla loggor i v2-gradient-körningen
+2. **Byggde color correction** — automatisk färgkorrigering för GPT-2 loggor
+   - Prototyp: `scratch/run_color_correction_eval.py`
+   - HTML-rapport: `out/color_correction_steps.html`
 
-### Resultat: Color drift (v2-gradient run)
+3. **Analysverktyg** — detaljerad färganalys per logga
+   - Script: `scratch/color_analysis_table.py`
+   - Output: `scratch/color_analysis_output.txt`
 
-**5 loggor genom GPT-2:**
+4. **Testade på 5 GPT-2 loggor** — alla fungerar efter fix
 
-| Logo | Max ΔE | Status | Huvudproblem |
-|------|--------|--------|--------------|
-| team_usa | 40.0 | ❌ BAD | Röd #960012 → #f60418 (mycket ljusare!) |
-| Chicago Blues FC | 38.9 | ❌ BAD | Svart → mörkblå, röd shifted |
-| Cantagalo Logo | 27.0 | ❌ BAD | Guld → mer gul, brun shifted |
-| special_knivstais | 7.4 | ⚠️ DRIFT | Grå → blågrå |
-| leopards | 4.5 | ✅ OK | Minimal drift |
+### Metoden
 
-**5 loggor transparent_skip (inget GPT-2):**
-- Hammarby IF, Kumla_Hockey, Trollbäckens GK, Tyresö FF, Warner
+```
+1. Extrahera färger från genererad bild (12 kluster, exkludera svart/vit)
+2. För varje färg >5% med ΔE >10 från original → byt färg
+3. Smart tolerans (ΔE/2) → undviker att byta liknande-men-olika färger
+```
 
-### Slutsats från explore
+### Resultat
 
-- ✅ **Hypotesen bekräftad** — 4/5 GPT-2-loggor har märkbar färgdrift
-- ✅ **3/5 har allvarlig drift** (ΔE > 15) — synligt fel
-- ✅ **Driften är mätbar** — vi kan detektera och potentiellt korrigera
-- ✅ **transparent_skip funkar** — de som inte behöver GPT-2 slipper problemet
+| Logga | Byten | Resultat |
+|-------|-------|----------|
+| Cantagalo | 1 (guld) | ✅ Bra |
+| Chicago Blues | 2 (blå, röd) | ✅ Bra (efter fix för två blå nyanser) |
+| leopards | 2 (orange, gul) | ✅ Bra |
+| special_knivstais | 1 (guld) | ✅ Bra |
+| team_usa | 1 (röd) | ✅ Bra |
+
+### Lärdomar
+
+- **Svart/vit driftar aldrig** → exkluderas från analys
+- **Röda färger driftar mest** → blir fluorescerande
+- **Guld/orange plattas** → nyanser slås ihop
+- **Smart tolerans krävs** → Chicago hade två blå, naiv metod bytte fel
+
+### Risker
+
+- **Låg risk** för enkla loggor (2-4 distinkta färger)
+- **Medel risk** för loggor med flera nyanser av samma färg
+- **Användaren godkänner alltid** → säkerhetsnät
 
 ## Nästa steg
 
-1. **Besluta**: Ska vi bygga color-correction?
-   - Option A: `check_colours` gatekeeper + `correct_colours` script
-   - Option B: Acceptera driften för nu
+1. **Ladda upp till apiai.me** — `scripts/correct_colors.py`
+2. **Koppla in i pipeline** — efter GPT-2 steget, med original som reference
+3. **Heja testar i produktion** — logga in, logga ut, ingen text
 
-2. **Om ja till color-correction**:
-   - Skriv `check_colours.py` — avgör om logga är lämplig (platt? få färger?)
-   - Skriv `correct_colours.py` — mappar driftade färger tillbaka
-   - Testa på Cantagalo som proof-of-concept
-
-## Scratch-filer (för denna explore)
+## Scratch-filer
 
 ```
 customers/heja/pipeline/scratch/
-├── test_color_drift.py          # Enkel test på Cantagalo
-├── test_color_drift_all.py      # Alla loggor (med fel routing)
-└── test_color_drift_gpt2.py     # Endast GPT-2-loggor (korrekt)
+├── color_analysis_table.py       # Färganalys per logga
+├── color_analysis_output.txt     # Senaste analysresultat
+├── run_color_correction_eval.py  # Kör korrigering + HTML-rapport
+├── test_color_correction.py      # Första test (Cantagalo)
+└── test_color_drift_gpt2.py      # Drift-analys (äldre)
 ```
 
 ## ΔE-tolkning (för referens)
 
-- 0-1: Ej synbart
-- 1-2: Synbart vid noggrann jämförelse
-- 2-10: Synbart direkt
-- 11-49: Tydligt annorlunda
-- 50+: Helt olika färger
+- 0-5: OK (knappt synbart)
+- 5-10: Drift (synbart vid jämförelse)
+- 10-15: Tydlig drift (bör korrigeras)
+- 15+: Allvarligt (måste korrigeras)
