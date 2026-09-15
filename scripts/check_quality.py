@@ -12,9 +12,9 @@ Quality metrics:
    High flatness = clean vector-like graphics with solid color areas
    Low flatness = many unique colors, indicates compression artifacts or noise
 3. Gradient smoothness (transparent images only) - ratio of smooth alpha transitions
-   to hard jumps. Measures anti-aliasing quality on transparent edges.
-   High gradient = smooth AA edges (good quality)
-   Low gradient = jagged/hard edges (poor quality, e.g. GIF-converted)
+   to medium jumps. Measures anti-aliasing quality on transparent edges.
+   High gradient = smooth AA edges OR clean hard-cut edges (good quality)
+   Low gradient = medium jumps indicating compression artifacts (poor quality)
 
 Routing logic:
 - MP >= 1.0 → high quality (skip enhancement)
@@ -35,24 +35,25 @@ Params:
 import io
 import sys
 import logging
-from collections import Counter
 
 import numpy as np
 from PIL import Image
-
-try:
-    from script_io import read_input, write_output, write_error
-    SCRIPT_IO_AVAILABLE = True
-except ImportError:
-    SCRIPT_IO_AVAILABLE = False
 
 log = logging.getLogger("check_quality")
 logging.basicConfig(stream=sys.stderr, level=logging.INFO,
                     format="%(name)s %(levelname)s: %(message)s")
 
-# Gradient thresholds for edge analysis
-GRADIENT_SMOOTH_THRESHOLD = 50   # Below this = smooth anti-aliasing (good)
-GRADIENT_HARD_THRESHOLD = 200    # Above this = hard edges
+# Gradient magnitude thresholds for edge analysis
+# Pixels with gradient magnitude below this are "smooth" (good AA or flat areas)
+GRADIENT_SMALL_STEP_MAX = 50
+# Pixels with gradient magnitude above this are "hard edges" (intentional, not artifacts)
+GRADIENT_HARD_EDGE_MIN = 200
+
+# Maximum dimension for quality analysis (downsample larger images for speed)
+MAX_ANALYSIS_DIM = 500
+
+# Reserved output field names that cannot be used as the 'field' param
+RESERVED_FIELDS = {"image", "content_type", "error"}
 
 PARAM_DEFS = [
     {"name": "field", "type": "string", "description": "Metadata field name for the result boolean", "default_value": "needs_enhancement"},
@@ -63,6 +64,16 @@ PARAM_DEFS = [
 ]
 
 
+def _downsample_for_analysis(img, max_dim=MAX_ANALYSIS_DIM):
+    """Downsample image if larger than max_dim for faster analysis."""
+    w, h = img.size
+    if max(w, h) <= max_dim:
+        return img
+    scale = max_dim / max(w, h)
+    new_size = (int(w * scale), int(h * scale))
+    return img.resize(new_size, Image.LANCZOS)
+
+
 def calculate_flatness_percent(img, num_colors=16, tolerance=12):
     """
     Calculate percentage of pixels that use one of the N most common colors.
@@ -70,15 +81,8 @@ def calculate_flatness_percent(img, num_colors=16, tolerance=12):
     High flatness = clean vector-like graphics with solid color areas
     Low flatness = many unique colors (compression artifacts, gradients, noise)
 
-    A clean logo from vector source will have very few distinct colors (high flatness).
-    A logo that's been through lossy compression or bad upscaling will have
-    many color variations (low flatness).
-
-    Colors are grouped by tolerance (e.g., tolerance=12 means colors within
-    12 RGB units are considered the same). This prevents anti-aliasing and
-    subtle gradients from artificially lowering the flatness score.
-
-    Transparent pixels (alpha=0) are excluded from the calculation.
+    Uses vectorized numpy operations for performance.
+    Transparent pixels (alpha < 128) are excluded from the calculation.
 
     Args:
         img: PIL Image (RGB or RGBA)
@@ -88,35 +92,36 @@ def calculate_flatness_percent(img, num_colors=16, tolerance=12):
     Returns:
         float: Percentage of pixels using the top N colors (0-100)
     """
-    # Handle transparency: only include opaque pixels
+    # Downsample for speed (flatness is statistical, doesn't need full res)
+    img = _downsample_for_analysis(img)
+
+    # Get pixels as numpy array
     if img.mode == 'RGBA':
         pixels_array = np.array(img)
-        # Mask out fully transparent pixels (alpha < 128)
+        # Mask out transparent pixels (alpha < 128)
         opaque_mask = pixels_array[:, :, 3] >= 128
         rgb_pixels = pixels_array[:, :, :3][opaque_mask]
-        pixels = [tuple(p) for p in rgb_pixels]
     else:
-        rgb = img.convert('RGB')
-        pixels = list(rgb.getdata())
+        rgb_pixels = np.array(img.convert('RGB')).reshape(-1, 3)
 
-    total_pixels = len(pixels)
+    total_pixels = len(rgb_pixels)
     if total_pixels == 0:
         return 100.0
 
-    # Group similar colors by quantizing to tolerance
-    quant_pixels = [
-        (r // tolerance * tolerance, g // tolerance * tolerance, b // tolerance * tolerance)
-        for r, g, b in pixels
-    ]
+    # Quantize colors (vectorized)
+    quant_pixels = (rgb_pixels // tolerance * tolerance)
 
-    # Count quantized colors
-    color_counts = Counter(quant_pixels)
+    # Pack RGB into single int for efficient counting
+    packed = (quant_pixels[:, 0].astype(np.int32) << 16) | \
+             (quant_pixels[:, 1].astype(np.int32) << 8) | \
+             quant_pixels[:, 2].astype(np.int32)
 
-    # Get the top N colors
-    top_colors = color_counts.most_common(num_colors)
+    # Count unique colors
+    unique, counts = np.unique(packed, return_counts=True)
 
-    # Sum pixels using top colors
-    top_color_pixels = sum(count for _, count in top_colors)
+    # Get top N colors
+    top_indices = np.argsort(-counts)[:num_colors]
+    top_color_pixels = counts[top_indices].sum()
 
     return (top_color_pixels / total_pixels) * 100
 
@@ -134,26 +139,31 @@ def is_transparent(img):
     if img.mode != 'RGBA':
         return False
     alpha = np.array(img.split()[3])
-    return bool(alpha.min() < 255)  # Convert numpy.bool_ to Python bool for JSON
+    return bool(alpha.min() < 255)
 
 
 def calculate_gradient_smooth(img):
     """
     Calculate gradient smoothness on alpha channel for transparent images.
 
-    Measures the ratio of smooth alpha transitions (good anti-aliasing) to
-    hard/medium jumps (jagged edges). High values indicate smooth, well-antialiased
-    edges. Low values indicate poor quality edges (e.g., GIF-converted images,
-    compression artifacts).
+    Measures the ratio of smooth/hard edges to medium jumps. Medium jumps
+    (between GRADIENT_SMALL_STEP_MAX and GRADIENT_HARD_EDGE_MIN) indicate
+    compression artifacts or poor anti-aliasing.
+
+    Both smooth AA edges AND clean hard-cut edges score well — only medium
+    jumps (the hallmark of compression artifacts) lower the score.
 
     Args:
         img: PIL Image (must be RGBA with transparency)
 
     Returns:
-        float: Gradient smoothness percentage (0-100), or None if not applicable
+        float: Gradient quality percentage (0-100), or None if not applicable
     """
     if img.mode != 'RGBA':
         return None
+
+    # Downsample for speed
+    img = _downsample_for_analysis(img)
 
     alpha = np.array(img.split()[3], dtype=np.float32)
 
@@ -166,21 +176,22 @@ def calculate_gradient_smooth(img):
     grad_mag = np.sqrt(gx**2 + gy**2)
 
     # Count edge pixels by gradient magnitude:
-    # - Small steps (< GRADIENT_SMOOTH_THRESHOLD): smooth anti-aliasing (good)
+    # - Small steps (< GRADIENT_SMALL_STEP_MAX): smooth anti-aliasing (good)
     # - Medium jumps: compression artifacts, poor AA (bad)
-    # - Large jumps (>= GRADIENT_HARD_THRESHOLD): hard edges (bad but expected for some logos)
-    small_steps = np.sum((grad_mag > 0) & (grad_mag < GRADIENT_SMOOTH_THRESHOLD))
-    medium_jumps = np.sum((grad_mag >= GRADIENT_SMOOTH_THRESHOLD) & (grad_mag < GRADIENT_HARD_THRESHOLD))
-    large_jumps = np.sum(grad_mag >= GRADIENT_HARD_THRESHOLD)
+    # - Large jumps (>= GRADIENT_HARD_EDGE_MIN): intentional hard edges (good)
+    small_steps = np.sum((grad_mag > 0) & (grad_mag < GRADIENT_SMALL_STEP_MAX))
+    medium_jumps = np.sum((grad_mag >= GRADIENT_SMALL_STEP_MAX) & (grad_mag < GRADIENT_HARD_EDGE_MIN))
+    large_jumps = np.sum(grad_mag >= GRADIENT_HARD_EDGE_MIN)
 
     total_edges = small_steps + medium_jumps + large_jumps
     if total_edges == 0:
         return None  # No edges at all
 
-    # Smooth ratio: percentage of edges that are smooth
-    # High = good quality, Low = bad quality (jagged/artifacts)
-    smooth_ratio = (small_steps / total_edges) * 100
-    return round(smooth_ratio, 1)
+    # Quality ratio: percentage of edges that are NOT medium jumps
+    # Both smooth AA (small_steps) and clean hard cuts (large_jumps) are good
+    good_edges = small_steps + large_jumps
+    quality_ratio = (good_edges / total_edges) * 100
+    return round(quality_ratio, 1)
 
 
 def check_quality(img, mp_high=1.0, mp_low=0.09, flatness_threshold=80, gradient_threshold=50):
@@ -226,7 +237,7 @@ def check_quality(img, mp_high=1.0, mp_low=0.09, flatness_threshold=80, gradient
         needs_enhancement = True
         reason = "low_flatness"
     elif transparent and gradient_pct is not None and gradient_pct < gradient_threshold:
-        # Transparent image with poor edge quality (jagged, no AA)
+        # Transparent image with poor edge quality (medium jumps = artifacts)
         needs_enhancement = True
         reason = "low_gradient"
     else:
@@ -252,6 +263,8 @@ def check_quality(img, mp_high=1.0, mp_low=0.09, flatness_threshold=80, gradient
 
 def main():
     """Entry point when running in apiai.me environment."""
+    from script_io import read_input, write_output, write_error
+
     body_bytes, content_type, params = read_input()
     if not body_bytes:
         write_error("No image provided")
@@ -265,6 +278,12 @@ def main():
 
     # Parse params
     field = params.get("field", "needs_enhancement")
+
+    # Guard against reserved field names
+    if field in RESERVED_FIELDS:
+        write_error(f"Invalid field name '{field}' - reserved by platform")
+        return
+
     try:
         mp_high = float(params.get("mp_high_threshold", "1.0") or "1.0")
         mp_low = float(params.get("mp_low_threshold", "0.09") or "0.09")
@@ -272,6 +291,11 @@ def main():
         gradient_threshold = float(params.get("gradient_threshold", "50") or "50")
     except ValueError as e:
         write_error(f"Invalid numeric parameter: {e}")
+        return
+
+    # Validate mp_high > mp_low
+    if mp_low >= mp_high:
+        write_error(f"mp_low_threshold ({mp_low}) must be less than mp_high_threshold ({mp_high})")
         return
 
     result, metadata = check_quality(img, mp_high, mp_low, flatness_threshold, gradient_threshold)
@@ -314,6 +338,10 @@ def run_local_cli():
     p.add_argument("--gradient", type=float, default=50, help="Gradient threshold")
     args = p.parse_args()
 
+    if args.mp_low >= args.mp_high:
+        print(f"Error: mp_low ({args.mp_low}) must be less than mp_high ({args.mp_high})")
+        sys.exit(1)
+
     img = Image.open(args.input)
     result, metadata = check_quality(img, args.mp_high, args.mp_low, args.flatness, args.gradient)
 
@@ -327,7 +355,7 @@ def run_local_cli():
 
 
 if __name__ == "__main__":
-    if SCRIPT_IO_AVAILABLE and len(sys.argv) <= 1:
+    if len(sys.argv) <= 1:
         main()
     else:
         run_local_cli()
