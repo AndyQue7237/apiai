@@ -102,21 +102,23 @@ Rapport: `out/color_correction_test.html`
 
 ## Nästa steg
 
-1. **Verifiera HTML-rapporten visuellt** — kolla att Knivsta ser bra ut
-2. **Committa fixen** — `scripts/correct_colors.py`
-3. **Ladda upp till apiai.me igen** — ersätt trasig version
-4. **Testa live på apiai.me** — verifiera att det fungerar i produktion
+1. ~~Verifiera HTML-rapporten visuellt~~ ✅
+2. ~~Committa fixen~~ ✅ `d6d8b46`
+3. ~~Ladda upp till apiai.me~~ ✅
+4. ~~Testa live på apiai.me~~ ✅ 5/5 PASS
+
+**Klart!** Scriptet fungerar. Nästa: använd i pipeline.
 
 ## Scratch-filer
 
 ```
 customers/heja/pipeline/scratch/
-├── test_fixed_correct_colors.py  # NY: Testar det riktiga scriptet
+├── test_apiai_all_logos.py       # Testar alla 5 mot apiai.me API
+├── test_apiai_correct_colors.py  # Testar en logga mot apiai.me API
+├── test_fixed_correct_colors.py  # Testar lokalt mot scripts/correct_colors.py
 ├── color_analysis_table.py       # Färganalys per logga
-├── color_analysis_output.txt     # Senaste analysresultat
 ├── run_color_correction_eval.py  # Kör korrigering + HTML-rapport (egen kopia)
-├── test_color_correction.py      # Första test (Cantagalo)
-└── test_color_drift_gpt2.py      # Drift-analys (äldre)
+└── (äldre testfiler...)
 ```
 
 ## ΔE-tolkning (för referens)
