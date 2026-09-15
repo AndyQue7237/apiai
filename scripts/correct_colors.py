@@ -18,7 +18,7 @@ The algorithm:
 2. For each color in generated image that covers >min_coverage% of pixels
 3. Find the closest color in the reference image (by ΔE in CIELAB)
 4. If ΔE > min_delta_e, replace that color with the reference color
-5. Use smart tolerance (ΔE/2) to avoid replacing similar-but-different colors
+5. Use smart tolerance (ΔE/2, max 15) to avoid replacing similar-but-different colors
 
 Black and white are excluded from correction — they rarely drift and
 false-matching them would damage intentional use of these colors.
@@ -31,13 +31,8 @@ import logging
 
 import numpy as np
 from PIL import Image
-from sklearn.cluster import KMeans
-
-try:
-    from script_io import read_input, write_output, write_error
-    SCRIPT_IO_AVAILABLE = True
-except ImportError:
-    SCRIPT_IO_AVAILABLE = False
+from scipy.cluster.vq import kmeans2
+from skimage.color import rgb2lab
 
 log = logging.getLogger("correct_colors")
 logging.basicConfig(stream=sys.stderr, level=logging.INFO,
@@ -45,10 +40,14 @@ logging.basicConfig(stream=sys.stderr, level=logging.INFO,
 
 # Black/white detection thresholds
 BW_BRIGHTNESS_THRESHOLD = 25      # Pixels darker than this are "black"
-BW_GRAYSCALE_TOLERANCE = 30       # Max R/G/B spread to be considered grayscale
+BW_GRAYSCALE_TOLERANCE = 20       # Max R/G/B spread to be considered grayscale
 
 # Smart replacement tolerance
 MIN_REPLACEMENT_TOLERANCE = 5     # Minimum ΔE tolerance for color replacement
+MAX_REPLACEMENT_TOLERANCE = 15    # Maximum ΔE tolerance (cap for safety)
+
+# Downsampling for clustering (color distribution preserved at small sizes)
+MAX_CLUSTER_DIM = 200
 
 
 # ── Parameter definitions (picked up by admin "Scan Script") ──
@@ -56,7 +55,7 @@ PARAM_DEFS = [
     {
         "name": "image_reference",
         "type": "string",
-        "description": "Reference image with the correct/original colors. Colors from this image are used to correct drift in the input image.",
+        "description": "Base64-encoded reference image with correct/original colors. Colors from this image are used to correct drift in the input image.",
         "default_value": "",
         "required": True,
     },
@@ -83,32 +82,14 @@ PARAM_DEFS = [
 
 # ───────────────────────────── helpers ─────────────────────────────
 
-def rgb_to_lab(rgb):
-    """Convert RGB (0-255) to CIELAB color space."""
-    r, g, b = [x / 255.0 for x in rgb[:3]]
-
-    def pivot(n):
-        return n ** 2.4 if n > 0.04045 else n / 12.92
-
-    r, g, b = pivot(r), pivot(g), pivot(b)
-
-    # RGB to XYZ
-    x = r * 0.4124564 + g * 0.3575761 + b * 0.1804375
-    y = r * 0.2126729 + g * 0.7151522 + b * 0.0721750
-    z = r * 0.0193339 + g * 0.1191920 + b * 0.9503041
-
-    # Normalize for D65 illuminant
-    x, y, z = x / 0.95047, y / 1.0, z / 1.08883
-
-    def f(t):
-        return t ** (1/3) if t > 0.008856 else (7.787 * t) + (16 / 116)
-
-    return (116 * f(y)) - 16, 500 * (f(x) - f(y)), 200 * (f(y) - f(z))
-
-
-def delta_e(lab1, lab2):
-    """Calculate ΔE (Euclidean distance in CIELAB)."""
-    return np.sqrt(sum((a - b) ** 2 for a, b in zip(lab1, lab2)))
+def _downsample_for_clustering(img, max_dim=MAX_CLUSTER_DIM):
+    """Downsample image for faster clustering (color distribution preserved)."""
+    w, h = img.size
+    if max(w, h) <= max_dim:
+        return img
+    scale = max_dim / max(w, h)
+    new_size = (int(w * scale), int(h * scale))
+    return img.resize(new_size, Image.LANCZOS)
 
 
 def rgb_to_hex(rgb):
@@ -144,28 +125,31 @@ def extract_colors(img, n_colors=12, exclude_bw=True):
 
     Returns list of (color_rgb, percentage) tuples, sorted by percentage.
     Transparent pixels are excluded. Black/white optionally excluded.
+    Uses scipy.cluster.vq.kmeans2 (sklearn not available on platform).
     """
     if img.mode != "RGBA":
         img = img.convert("RGBA")
 
+    # Downsample for speed (color distribution is preserved)
+    img = _downsample_for_clustering(img)
+
     pixels = np.array(img).reshape(-1, 4)
     # Filter out transparent pixels
-    opaque = pixels[pixels[:, 3] > 128][:, :3]
+    opaque = pixels[pixels[:, 3] > 128][:, :3].astype(np.float32)
 
     if len(opaque) < n_colors:
         return []
 
-    kmeans = KMeans(n_clusters=n_colors, random_state=42, n_init=10)
-    kmeans.fit(opaque)
+    # Use scipy kmeans2 instead of sklearn KMeans
+    centroids, labels = kmeans2(opaque, n_colors, minit='points', seed=42)
 
-    colors = kmeans.cluster_centers_.astype(int)
-    labels = kmeans.labels_
-    counts = np.bincount(labels)
+    colors = centroids.astype(int)
+    counts = np.bincount(labels, minlength=n_colors)
     total = len(labels)
 
     results = []
     for idx in np.argsort(-counts):
-        color = tuple(colors[idx])
+        color = tuple(np.clip(colors[idx], 0, 255))
         pct = counts[idx] / total * 100
         if exclude_bw and is_black_or_white(color):
             continue
@@ -176,11 +160,16 @@ def extract_colors(img, n_colors=12, exclude_bw=True):
 
 def find_best_match(color, candidates):
     """Find the best matching color from candidates based on ΔE."""
-    lab1 = rgb_to_lab(color)
+    # Convert single color to Lab (skimage expects 0-1 range, shape (1,1,3))
+    color_rgb = np.array([[color[:3]]], dtype=np.float32) / 255.0
+    lab1 = rgb2lab(color_rgb)[0, 0]
+
     best_match, best_delta = None, float("inf")
 
     for cand, _ in candidates:
-        d = delta_e(lab1, rgb_to_lab(cand))
+        cand_rgb = np.array([[cand[:3]]], dtype=np.float32) / 255.0
+        lab2 = rgb2lab(cand_rgb)[0, 0]
+        d = np.sqrt(np.sum((lab1 - lab2) ** 2))
         if d < best_delta:
             best_delta, best_match = d, cand
 
@@ -191,36 +180,41 @@ def replace_color_smart(img, old_color, new_color, max_delta):
     """
     Replace old_color with new_color in image, using smart tolerance.
 
-    Only replaces pixels where: ΔE(pixel, old_color) < max_delta / 2
-
-    This prevents accidentally replacing similar-but-different colors
-    (e.g., light blue vs dark blue when targeting a drifted dark blue).
-    The tolerance is half the drift distance, minimum 5 ΔE.
+    Vectorized implementation using skimage.color.rgb2lab for speed.
+    Only replaces pixels where: ΔE(pixel, old_color) < tolerance
+    Tolerance is min(MAX_REPLACEMENT_TOLERANCE, max(MIN_REPLACEMENT_TOLERANCE, max_delta/2))
 
     Returns: (corrected_image, number_of_pixels_replaced)
     """
     pixels = np.array(img, dtype=np.float32)
-    new_rgb = np.array(new_color, dtype=np.float32)
-    old_lab = rgb_to_lab(old_color)
-
-    # Tolerance: half the drift distance, with minimum
-    tolerance = max(MIN_REPLACEMENT_TOLERANCE, max_delta / 2)
-
     h, w = pixels.shape[:2]
-    replaced = 0
 
-    for y in range(h):
-        for x in range(w):
-            if pixels[y, x, 3] < 128:  # Skip transparent
-                continue
-            pixel_rgb = tuple(pixels[y, x, :3].astype(int))
-            pixel_lab = rgb_to_lab(pixel_rgb)
-            pixel_delta = delta_e(pixel_lab, old_lab)
+    # Tolerance: half the drift distance, clamped to safe range
+    tolerance = min(MAX_REPLACEMENT_TOLERANCE, max(MIN_REPLACEMENT_TOLERANCE, max_delta / 2))
 
-            if pixel_delta < tolerance:
-                pixels[y, x, :3] = new_rgb
-                replaced += 1
+    # Create mask for opaque pixels
+    opaque_mask = pixels[:, :, 3] >= 128
 
+    # Convert RGB to Lab for all pixels (vectorized)
+    # skimage expects (H, W, 3) in range 0-1
+    rgb_normalized = pixels[:, :, :3] / 255.0
+    all_lab = rgb2lab(rgb_normalized)
+
+    # Convert old_color to Lab
+    old_rgb = np.array([[old_color[:3]]], dtype=np.float32) / 255.0
+    old_lab = rgb2lab(old_rgb)[0, 0]
+
+    # Calculate ΔE for all pixels (vectorized)
+    delta_e = np.sqrt(np.sum((all_lab - old_lab) ** 2, axis=2))
+
+    # Create replacement mask: opaque AND within tolerance
+    replace_mask = opaque_mask & (delta_e < tolerance)
+
+    # Apply replacement
+    new_rgb = np.array(new_color[:3], dtype=np.float32)
+    pixels[replace_mask, :3] = new_rgb
+
+    replaced = int(np.sum(replace_mask))
     return Image.fromarray(pixels.astype(np.uint8)), replaced
 
 
@@ -281,6 +275,8 @@ def apply_color_correction(gen_img, ref_img, min_coverage, min_delta_e, n_cluste
 
 def main():
     """Entry point when running in apiai.me environment."""
+    from script_io import read_input, write_output, write_error
+
     body_bytes, content_type, params = read_input()
     if not body_bytes:
         write_error("No image provided (request body)")
@@ -404,7 +400,7 @@ def run_local_cli():
 
 
 if __name__ == "__main__":
-    if SCRIPT_IO_AVAILABLE and len(sys.argv) <= 1:
+    if len(sys.argv) <= 1:
         main()
     else:
         run_local_cli()

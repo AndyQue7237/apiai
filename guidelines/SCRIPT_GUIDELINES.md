@@ -142,8 +142,12 @@ Pre-installed — `import` freely: **`Pillow` (PIL), `numpy`, `opencv-python-hea
 `pathlib`, …).
 
 **⚠️ `requests` is NOT available.** Use `urllib.request` for HTTP (see how
-`nb_pro_inpaint.py` calls Gemini with stdlib only). Anything outside the list must be
-replaced with a stdlib equivalent or added by a developer.
+`nb_pro_inpaint.py` calls Gemini with stdlib only).
+
+**⚠️ `scikit-learn` (sklearn) is NOT available.** For clustering, use `scipy.cluster.vq.kmeans2`
+instead of `sklearn.cluster.KMeans`. For color space conversion, use `skimage.color.rgb2lab`.
+
+Anything outside the list must be replaced with a stdlib equivalent or added by a developer.
 
 **Server env vars:** `GEMINI_API_KEY`, `REPLICATE_API_TOKEN` (read via `os.environ`; never
 hardcode a key).

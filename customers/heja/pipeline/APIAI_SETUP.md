@@ -253,7 +253,7 @@ Remove background outside the team emblem. Important keep the logo identical wit
 | Script | Fil | Requirements |
 |--------|-----|--------------|
 | check_quality | `scripts/check_quality.py` | `Pillow`, `numpy` |
-| correct_colors | `scripts/correct_colors.py` | `Pillow`, `numpy`, `scikit-learn` |
+| correct_colors | `scripts/correct_colors.py` | `Pillow`, `numpy`, `scipy`, `scikit-image` |
 
 **check_quality — API Description:**
 > Analyzes image quality and outputs boolean flags for pipeline routing. Checks resolution (megapixels), color flatness, and edge gradients. Use this to decide if an image needs AI enhancement or can skip processing.
