@@ -13,18 +13,33 @@ samtliga!"* Byts bara på ett nytt uttryckligt beslut — aldrig av en omkörnin
 10 loggor i setet. Kör `run_all.py --method v2` för hela batchen, eller `run_pipeline_v2.py` på
 en enskild fil.
 
-## Konfiguration
+## Konfiguration (14 noder)
 
-| # | Nod | Var | Parametrar |
-|---|-----|-----|------------|
-| 1 | Detect and Crop | `apiai-tools/scripts/detect_and_crop.py` | `query="complete logo with text..."` · `min_padding=5` |
-| 2 | Check Quality | `check_quality.py` | `mp_high=1.0` · `mp_low=0.09` · `flatness=80` · `gradient=50` |
-| 3 | Check Transparency | `check_transparency.py` | `sample_percent=5` · `threshold=250` |
-| — | Routing | | needs_enhancement → GPT-2 · transparent + bra kvalitet → skip |
-| 4 | **GPT Image 2** | OpenAI direkt | `background=transparent` · `output_format=png` · `quality=medium` · `size=auto` |
-| 5 | Check Resolution | `check_resolution.py` | `max_pixels=2000000` |
-| 6 | Real-ESRGAN | Replicate direkt | `scale=4` · `face_enhance=false` |
-| 7 | Transparent Crop | `crop_transparent.py` | `format=1:1` · `margin=10` · `alpha_threshold=10` |
+Pipelinen har två flöden: **låg kvalitet** (GPT2) och **hög kvalitet** (skip GPT2).
+
+### Låg kvalitet-flöde (nod 1-7, END)
+
+| # | Nod | Parametrar | Skip |
+|---|-----|------------|------|
+| 1 | Detect and Crop | `query="complete logo..."` · `min_padding=5` | — |
+| 2 | Check Quality | `mp_high=1.0` · `mp_low=0.09` · `flatness=80` · `gradient=50` | Om `has_high_quality=true` → skip 5 (till nod 8) |
+| 3 | **GPT Image 2** | `background=transparent` · `output_format=png` · `quality=medium` · `size=auto` | — |
+| 4 | **Correct Colors** | `image_reference=steg 1` · `min_coverage=5` · `min_delta_e=10` · `n_clusters=12` | — |
+| 5 | Check Resolution | `min_pixels=5000000` | Om `is_high_resolution=true` → skip 1 |
+| 6 | Upscale 4x | `scale=4` · `face_enhance=false` | — |
+| 7 | Transparent Crop | `format=1:1` · `margin=10` · `alpha_threshold=10` | **END PIPELINE** |
+
+### Hög kvalitet-flöde (nod 8-14)
+
+| # | Nod | Parametrar | Skip |
+|---|-----|------------|------|
+| 8 | Check Transparency | `sample_percent=5` · `threshold=250` | Om `is_transparent=true` → skip 1 |
+| 9 | Remove Solid BG | `bg_color=auto` · `tolerance=20` · `feather=1` | — |
+| 10 | Check Resolution | `min_pixels=5000000` | Om `is_high_resolution=true` → skip 3 (till nod 14) |
+| 11 | Upscale 4x | `scale=4` · `face_enhance=false` | — |
+| 12 | Check Resolution | `min_pixels=5000000` | Om `is_high_resolution=true` → skip 1 |
+| 13 | Upscale 2x | `scale=2` · `face_enhance=false` | — |
+| 14 | Transparent Crop | `format=1:1` · `margin=10` · `alpha_threshold=10` | — |
 
 ### Prompt (ordagrant)
 
@@ -116,6 +131,14 @@ eller plattare). Om färgexakthet är viktigt: extrahera dominanta färger, jäm
 **10. Smart tolerans vid färgbyte.** När två liknande färger finns (t.ex. ljusblå och mörkblå)
 måste bytet vara precist. Använd ΔE/2 som tolerans — bara pixlar som ligger mycket nära
 målfärgen byts. Annars riskerar man att byta fel nyans.
+
+**11. Testa alltid efter review-ändringar.** Claude-in-apiai.me kan föreslå ändringar som
+bryter scriptet (t.ex. justera thresholds, byta bibliotek). Efter implementering av review-
+feedback: **kör om lokalt test innan deploy.** Lita aldrig blint på reviewern.
+
+**12. apiai.me pipelines är linjära.** Inte DAGs. Skip fungerar med antal noder att hoppa över.
+Två checks efter varandra fungerar inte (bara senaste outputen finns). Använd `end_pipeline`
+för att terminera ett flöde tidigt när det finns flera flöden i samma pipeline.
 
 ## Cost
 
