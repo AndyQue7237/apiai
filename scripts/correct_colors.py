@@ -26,7 +26,6 @@ false-matching them would damage intentional use of these colors.
 
 import base64
 import io
-import os
 import sys
 import logging
 
@@ -40,32 +39,42 @@ try:
 except ImportError:
     SCRIPT_IO_AVAILABLE = False
 
-
 log = logging.getLogger("correct_colors")
 logging.basicConfig(stream=sys.stderr, level=logging.INFO,
                     format="%(name)s %(levelname)s: %(message)s")
+
+# Black/white detection thresholds
+BW_BRIGHTNESS_THRESHOLD = 25      # Pixels darker than this are "black"
+BW_GRAYSCALE_TOLERANCE = 30       # Max R/G/B spread to be considered grayscale
+
+# Smart replacement tolerance
+MIN_REPLACEMENT_TOLERANCE = 5     # Minimum ΔE tolerance for color replacement
 
 
 # ── Parameter definitions (picked up by admin "Scan Script") ──
 PARAM_DEFS = [
     {
         "name": "image_reference",
+        "type": "string",
         "description": "Reference image with the correct/original colors. Colors from this image are used to correct drift in the input image.",
         "default_value": "",
         "required": True,
     },
     {
         "name": "min_coverage",
+        "type": "float",
         "description": "Minimum percentage of image a color must cover to be considered for correction. Range 1-50. Default 5.",
         "default_value": "5",
     },
     {
         "name": "min_delta_e",
+        "type": "float",
         "description": "Minimum color difference (ΔE) to trigger correction. Range 5-50. ΔE 5-10 is noticeable, 10-15 is clear drift, 15+ is severe. Default 10.",
         "default_value": "10",
     },
     {
         "name": "n_clusters",
+        "type": "int",
         "description": "Number of color clusters for analysis. Higher values detect more color variations but increase processing time. Range 8-20. Default 12.",
         "default_value": "12",
     },
@@ -107,7 +116,7 @@ def rgb_to_hex(rgb):
     return f"#{rgb[0]:02x}{rgb[1]:02x}{rgb[2]:02x}"
 
 
-def is_black_or_white(rgb, threshold=25):
+def is_black_or_white(rgb):
     """
     Check if color is black or white (grayscale near extremes).
     Returns 'black', 'white', or None.
@@ -118,13 +127,13 @@ def is_black_or_white(rgb, threshold=25):
     """
     r, g, b = rgb[:3]
     # Check if grayscale (R ≈ G ≈ B)
-    if max(r, g, b) - min(r, g, b) > 30:
+    if max(r, g, b) - min(r, g, b) > BW_GRAYSCALE_TOLERANCE:
         return None  # Has color, not grayscale
 
     avg = (r + g + b) / 3
-    if avg < threshold:
+    if avg < BW_BRIGHTNESS_THRESHOLD:
         return "black"
-    if avg > 255 - threshold:
+    if avg > 255 - BW_BRIGHTNESS_THRESHOLD:
         return "white"
     return None
 
@@ -194,8 +203,8 @@ def replace_color_smart(img, old_color, new_color, max_delta):
     new_rgb = np.array(new_color, dtype=np.float32)
     old_lab = rgb_to_lab(old_color)
 
-    # Tolerance: half the drift distance, minimum 5
-    tolerance = max(5, max_delta / 2)
+    # Tolerance: half the drift distance, with minimum
+    tolerance = max(MIN_REPLACEMENT_TOLERANCE, max_delta / 2)
 
     h, w = pixels.shape[:2]
     replaced = 0
@@ -324,7 +333,11 @@ def main():
     corrected_img.save(buf, format="PNG")
 
     log.info("Color correction done: %d replacements", len(replacements))
-    write_output(buf.getvalue(), "image/png")
+    write_output(
+        buf.getvalue(),
+        "image/png",
+        colors_corrected=len(replacements),
+    )
 
 
 # ─────────────────────── local CLI entry point ───────────────────────
