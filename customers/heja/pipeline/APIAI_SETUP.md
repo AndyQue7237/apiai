@@ -61,9 +61,9 @@ Pipelinen har **två flöden** baserat på kvalitet:
 | Parameter | Value |
 |-----------|-------|
 | `query` | `"complete logo with text, full team logo with text, entire emblem, club logo"` |
-| `padding_percent` | `5` |
-| `min_padding` | `50` |
-| `safety_margin` | `30` |
+| `min_padding` | `5` |
+
+> **OBS:** Endast `query` och `min_padding` används. Övriga parametrar (`padding_percent`, `safety_margin`) har script-defaults som fungerar.
 
 ---
 
@@ -117,12 +117,14 @@ Remove background outside the team emblem. Important keep the logo identical wit
 
 | Parameter | Value |
 |-----------|-------|
-| `image_reference` | **From step 1** (originalbilden efter crop) |
+| `image_reference` | **From Original** (originalbilden) |
 | `min_coverage` | `5` |
 | `min_delta_e` | `10` |
 | `n_clusters` | `12` |
+| `auto_crop_reference` | `true` |
+| `crop_query` | `"complete logo with text, full team logo with text, entire emblem, club logo"` |
 
-> **VIKTIGT:** `image_reference` måste peka på output från **steg 1**, inte föregående steg!
+> **OBS:** Med `auto_crop_reference=true` kan originalfilen användas direkt — scriptet croppar internt via Florence-2.
 
 ---
 
@@ -309,7 +311,7 @@ Remove background outside the team emblem. Important keep the logo identical wit
 > Analyzes image quality and outputs boolean flags for pipeline routing. Checks resolution (megapixels), color flatness, and edge gradients. Use this to decide if an image needs AI enhancement or can skip processing.
 
 **correct_colors:**
-> Corrects color drift between a generated image and a reference. Compares dominant colors using ΔE in CIELAB color space and replaces colors that have drifted beyond a threshold. Use this after AI image generation to restore original colors.
+> Corrects color drift between a generated image and a reference. Compares dominant colors using ΔE in CIELAB color space and replaces colors that have drifted beyond a threshold. With auto_crop_reference=true, the reference image is automatically cropped using Florence-2 before color extraction — allowing use of the original uncropped file.
 
 ---
 
@@ -318,6 +320,7 @@ Remove background outside the team emblem. Important keep the logo identical wit
 | Service | Noder | Usage |
 |---------|-------|-------|
 | OpenAI GPT Image 2 | 3 | Bakgrundsborttagning + enhancement |
+| Replicate Florence-2 | 4 | Auto-crop av referensbild (correct_colors) |
 | Replicate Real-ESRGAN | 6, 11, 13 | Uppskalning |
 
 ---

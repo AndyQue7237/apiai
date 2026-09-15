@@ -28,11 +28,19 @@ import base64
 import io
 import sys
 import logging
+import os
 
 import numpy as np
 from PIL import Image
 from scipy.cluster.vq import kmeans2
 from skimage.color import rgb2lab
+
+# Optional: replicate for auto-crop (Florence-2)
+try:
+    import replicate
+    HAS_REPLICATE = True
+except ImportError:
+    HAS_REPLICATE = False
 
 log = logging.getLogger("correct_colors")
 logging.basicConfig(stream=sys.stderr, level=logging.INFO,
@@ -57,6 +65,11 @@ KMEANS_N_INIT = 10  # Run clustering multiple times, pick best (matches sklearn 
 
 # Maximum ΔE for a valid color match (beyond this, it's not drift, it's wrong match)
 MAX_MATCH_DELTA_E = 40
+
+
+# Florence-2 model for auto-crop
+FLORENCE_MODEL = "lucataco/florence-2-large:da53547e17d45b9cfb48174b2f18af8b83ca020fa76db62136bf9c6616762595"
+CROP_MIN_PADDING = 5  # Hardcoded, works well for logos
 
 
 # ── Parameter definitions (picked up by admin "Scan Script") ──
@@ -86,10 +99,111 @@ PARAM_DEFS = [
         "description": "Number of color clusters for analysis. Higher values detect more color variations but increase processing time. Range 8-20. Default 12.",
         "default_value": "12",
     },
+    {
+        "name": "auto_crop_reference",
+        "type": "boolean",
+        "description": "Auto-crop reference image before color extraction using Florence-2 object detection. Recommended when reference has large background areas. Default true.",
+        "default_value": "true",
+    },
+    {
+        "name": "crop_query",
+        "type": "string",
+        "description": "Detection query for auto-crop (e.g. 'logo', 'product', 'subject'). Only used if auto_crop_reference is true.",
+        "default_value": "complete logo with text, full team logo with text, entire emblem, club logo",
+    },
 ]
 
 
 # ───────────────────────────── helpers ─────────────────────────────
+
+def auto_crop_image(img, query):
+    """
+    Auto-crop image using Florence-2 object detection via Replicate.
+
+    Returns cropped image if detection succeeds, otherwise returns original.
+    """
+    if not HAS_REPLICATE:
+        log.warning("replicate not installed, skipping auto-crop")
+        return img
+
+    # Convert to bytes for API
+    buf = io.BytesIO()
+    img_format = "PNG" if img.mode == "RGBA" else "JPEG"
+    img.save(buf, format=img_format)
+    img_bytes = buf.getvalue()
+
+    mime = "image/png" if img_format == "PNG" else "image/jpeg"
+    data_uri = f"data:{mime};base64,{base64.b64encode(img_bytes).decode()}"
+
+    try:
+        output = replicate.run(
+            FLORENCE_MODEL,
+            input={
+                "image": data_uri,
+                "task_input": "Caption to Phrase Grounding",
+                "text_input": query,
+            },
+        )
+    except Exception as e:
+        log.warning("Florence-2 API error: %s, using original image", e)
+        return img
+
+    # Parse output
+    text_output = output.get("text", "")
+    try:
+        import ast
+        parsed = ast.literal_eval(text_output) if isinstance(text_output, str) else text_output
+    except Exception:
+        log.warning("Could not parse Florence-2 output, using original image")
+        return img
+
+    grounding = parsed.get("<CAPTION_TO_PHRASE_GROUNDING>", {})
+    bboxes = grounding.get("bboxes", [])
+
+    if not bboxes:
+        log.warning("No detection found, using original image")
+        return img
+
+    # Crop with padding
+    bbox = bboxes[0]
+    x1, y1, x2, y2 = bbox
+    logo_width = x2 - x1
+    logo_height = y2 - y1
+    img_width, img_height = img.size
+
+    # Calculate padding (same logic as detect_and_crop.py)
+    padding_percent = 5
+    padding_x_pct = int(logo_width * (padding_percent / 100))
+    padding_y_pct = int(logo_height * (padding_percent / 100))
+
+    desired_padding_x = max(padding_x_pct, CROP_MIN_PADDING)
+    desired_padding_y = max(padding_y_pct, CROP_MIN_PADDING)
+
+    max_pad_left = x1
+    max_pad_right = img_width - x2
+    max_pad_top = y1
+    max_pad_bottom = img_height - y2
+
+    padding_x = min(desired_padding_x, max_pad_left, max_pad_right)
+    padding_y = min(desired_padding_y, max_pad_top, max_pad_bottom)
+
+    # Centered crop
+    center_x = (x1 + x2) / 2
+    center_y = (y1 + y2) / 2
+
+    crop_w = logo_width + 2 * padding_x
+    crop_h = logo_height + 2 * padding_y
+
+    cx1 = int(max(0, center_x - crop_w / 2))
+    cy1 = int(max(0, center_y - crop_h / 2))
+    cx2 = int(min(img_width, center_x + crop_w / 2))
+    cy2 = int(min(img_height, center_y + crop_h / 2))
+
+    cropped = img.crop((cx1, cy1, cx2, cy2))
+    log.info("Auto-cropped reference: %dx%d -> %dx%d", img_width, img_height, cropped.width, cropped.height)
+
+    return cropped
+
 
 def _downsample_for_clustering(img, max_dim=MAX_CLUSTER_DIM):
     """Downsample image for faster clustering (color distribution preserved)."""
@@ -340,6 +454,11 @@ def main():
         write_error(f"Invalid numeric parameter: {e}")
         return
 
+    # Boolean params
+    auto_crop_str = (params.get("auto_crop_reference", "true") or "true").lower()
+    auto_crop_reference = auto_crop_str in ("true", "1", "yes")
+    crop_query = params.get("crop_query", "complete logo with text, full team logo with text, entire emblem, club logo") or "complete logo with text, full team logo with text, entire emblem, club logo"
+
     # Clamp to valid ranges
     min_coverage = max(1.0, min(50.0, min_coverage))
     min_delta_e = max(5.0, min(50.0, min_delta_e))
@@ -358,6 +477,11 @@ def main():
     except Exception as e:
         write_error(f"Could not decode image_reference: {e}")
         return
+
+    # Auto-crop reference if enabled
+    if auto_crop_reference:
+        log.info("Auto-cropping reference with query: %s", crop_query)
+        ref_img = auto_crop_image(ref_img, crop_query)
 
     log.info("Correcting colors: min_coverage=%.0f%%, min_delta_e=%.0f, clusters=%d",
              min_coverage, min_delta_e, n_clusters)
@@ -407,6 +531,13 @@ def run_local_cli():
                    help="Min ΔE to trigger correction (default 10)")
     p.add_argument("--n-clusters", type=int, default=12,
                    help="Number of color clusters (default 12)")
+    p.add_argument("--auto-crop", action="store_true", default=True,
+                   help="Auto-crop reference using Florence-2 (default: true)")
+    p.add_argument("--no-auto-crop", dest="auto_crop", action="store_false",
+                   help="Disable auto-crop of reference")
+    p.add_argument("--crop-query", type=str,
+                   default="complete logo with text, full team logo with text, entire emblem, club logo",
+                   help="Detection query for auto-crop")
     args = p.parse_args()
 
     # Load images
@@ -420,6 +551,13 @@ def run_local_cli():
 
     log.info("Input: %s (%dx%d)", args.input, *gen_img.size)
     log.info("Reference: %s (%dx%d)", args.reference, *ref_img.size)
+
+    # Auto-crop reference if enabled
+    if args.auto_crop:
+        log.info("Auto-cropping reference with query: %s", args.crop_query)
+        ref_img = auto_crop_image(ref_img, args.crop_query)
+        log.info("Reference after crop: %dx%d", *ref_img.size)
+
     log.info("Params: min_coverage=%.0f%%, min_delta_e=%.0f, clusters=%d",
              min_coverage, min_delta_e, n_clusters)
 
