@@ -40,14 +40,23 @@ logging.basicConfig(stream=sys.stderr, level=logging.INFO,
 
 # Black/white detection thresholds
 BW_BRIGHTNESS_THRESHOLD = 25      # Pixels darker than this are "black"
-BW_GRAYSCALE_TOLERANCE = 20       # Max R/G/B spread to be considered grayscale
+BW_GRAYSCALE_TOLERANCE = 30       # Max R/G/B spread to be considered grayscale (restored from original)
+
+# Near-white/highlight exclusion (colors too light to be brand colors)
+NEAR_WHITE_THRESHOLD = 220        # Average RGB above this is likely a highlight, exclude
 
 # Smart replacement tolerance
 MIN_REPLACEMENT_TOLERANCE = 5     # Minimum ΔE tolerance for color replacement
 MAX_REPLACEMENT_TOLERANCE = 15    # Maximum ΔE tolerance (cap for safety)
 
 # Downsampling for clustering (color distribution preserved at small sizes)
-MAX_CLUSTER_DIM = 200
+MAX_CLUSTER_DIM = 400  # Increased from 200 for better color detection
+
+# K-means stability (simulate sklearn's n_init)
+KMEANS_N_INIT = 5  # Run clustering multiple times, pick best
+
+# Maximum ΔE for a valid color match (beyond this, it's not drift, it's wrong match)
+MAX_MATCH_DELTA_E = 40
 
 
 # ── Parameter definitions (picked up by admin "Scan Script") ──
@@ -97,21 +106,28 @@ def rgb_to_hex(rgb):
     return f"#{rgb[0]:02x}{rgb[1]:02x}{rgb[2]:02x}"
 
 
-def is_black_or_white(rgb):
+def is_black_or_white_or_highlight(rgb):
     """
-    Check if color is black or white (grayscale near extremes).
-    Returns 'black', 'white', or None.
+    Check if color is black, white, or a near-white highlight.
+    Returns 'black', 'white', 'highlight', or None.
 
-    Black and white are excluded because:
-    - They rarely drift in AI generation
+    These are excluded because:
+    - Black/white rarely drift in AI generation
+    - Near-white highlights are shading artifacts, not brand colors
     - Matching them can cause false positives
     """
     r, g, b = rgb[:3]
+    avg = (r + g + b) / 3
+
+    # Check for near-white highlights (even with some color variation)
+    # These are shading/highlight colors that shouldn't be corrected
+    if avg > NEAR_WHITE_THRESHOLD:
+        return "highlight"
+
     # Check if grayscale (R ≈ G ≈ B)
     if max(r, g, b) - min(r, g, b) > BW_GRAYSCALE_TOLERANCE:
         return None  # Has color, not grayscale
 
-    avg = (r + g + b) / 3
     if avg < BW_BRIGHTNESS_THRESHOLD:
         return "black"
     if avg > 255 - BW_BRIGHTNESS_THRESHOLD:
@@ -140,18 +156,31 @@ def extract_colors(img, n_colors=12, exclude_bw=True):
     if len(opaque) < n_colors:
         return []
 
-    # Use scipy kmeans2 instead of sklearn KMeans
-    centroids, labels = kmeans2(opaque, n_colors, minit='points', seed=42)
+    # Run kmeans2 multiple times and pick best result (simulate sklearn n_init)
+    # This improves stability since scipy kmeans2 can be sensitive to initialization
+    best_centroids, best_labels, best_distortion = None, None, float('inf')
+    for i in range(KMEANS_N_INIT):
+        try:
+            centroids, labels = kmeans2(opaque, n_colors, minit='points', seed=42 + i)
+            # Calculate distortion (sum of squared distances to centroids)
+            distortion = np.sum((opaque - centroids[labels]) ** 2)
+            if distortion < best_distortion:
+                best_centroids, best_labels, best_distortion = centroids, labels, distortion
+        except Exception:
+            continue  # Skip failed iterations
 
-    colors = centroids.astype(int)
-    counts = np.bincount(labels, minlength=n_colors)
-    total = len(labels)
+    if best_centroids is None:
+        return []
+
+    colors = best_centroids.astype(int)
+    counts = np.bincount(best_labels, minlength=n_colors)
+    total = len(best_labels)
 
     results = []
     for idx in np.argsort(-counts):
         color = tuple(np.clip(colors[idx], 0, 255))
         pct = counts[idx] / total * 100
-        if exclude_bw and is_black_or_white(color):
+        if exclude_bw and is_black_or_white_or_highlight(color):
             continue
         results.append((color, pct))
 
@@ -159,7 +188,12 @@ def extract_colors(img, n_colors=12, exclude_bw=True):
 
 
 def find_best_match(color, candidates):
-    """Find the best matching color from candidates based on ΔE."""
+    """
+    Find the best matching color from candidates based on ΔE.
+
+    Returns (best_match, delta_e) or (None, inf) if no valid match found.
+    A match is invalid if delta_e > MAX_MATCH_DELTA_E (not drift, wrong match).
+    """
     # Convert single color to Lab (skimage expects 0-1 range, shape (1,1,3))
     color_rgb = np.array([[color[:3]]], dtype=np.float32) / 255.0
     lab1 = rgb2lab(color_rgb)[0, 0]
@@ -172,6 +206,12 @@ def find_best_match(color, candidates):
         d = np.sqrt(np.sum((lab1 - lab2) ** 2))
         if d < best_delta:
             best_delta, best_match = d, cand
+
+    # Safety check: if best match is too far, it's not drift, it's wrong match
+    if best_delta > MAX_MATCH_DELTA_E:
+        log.warning("No valid match for %s (best was ΔE %.1f > max %d)",
+                    rgb_to_hex(color), best_delta, MAX_MATCH_DELTA_E)
+        return None, float("inf")
 
     return best_match, best_delta
 
@@ -247,6 +287,9 @@ def apply_color_correction(gen_img, ref_img, min_coverage, min_delta_e, n_cluste
         if gen_pct < min_coverage:
             continue
         match, delta = find_best_match(gen_color, ref_colors)
+        # Skip if no valid match found (delta > MAX_MATCH_DELTA_E)
+        if match is None:
+            continue
         if delta > min_delta_e:
             corrections_needed.append((gen_color, match, delta, gen_pct))
 

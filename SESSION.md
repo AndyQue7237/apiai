@@ -4,13 +4,53 @@ Senast uppdaterad: 2026-09-15
 
 ## Aktuellt fokus
 
-**Pipeline redo för apiai.me setup**
+**Fix av correct_colors.py efter apiai.me review**
 
-- `correct_colors.py` — klar och testad
-- `APIAI_SETUP.md` — komplett instruktion för att sätta upp pipelinen
-- 5 MP minimum resolution med dubbel upscale (4x + 2x vid behov)
+- `correct_colors.py` — fixad efter att apiai.me-review bröt Knivsta-loggan
+- Alla 5 testloggor passerar igen (5/5 PASS)
+- **Nästa:** Committa fix, ladda upp till apiai.me
 
-## Senaste sessionen (2026-09-14)
+## Senaste sessionen (2026-09-15)
+
+### Vad som hände
+
+1. **Script fungerade lokalt** (2026-09-14)
+2. **Laddades upp till apiai.me** → Claude-in-apiai.me granskade
+3. **Review-ändringar pajade scriptet** — speciellt Knivsta-loggan
+4. **Identifierade problemet** — jämförde commit `42df044` (fungerade) med `e0311b7` (trasig)
+
+### Problemet (apiai.me review ändrade fel)
+
+| Ändring | Före (fungerade) | Efter (trasig) |
+|---------|------------------|----------------|
+| BW_GRAYSCALE_TOLERANCE | 30 | 20 |
+| MAX_CLUSTER_DIM | — | 200 (ny, för liten) |
+| K-means | sklearn (n_init=10) | scipy kmeans2 (instabil) |
+
+### Fixen (ocommittade ändringar)
+
+```python
+BW_GRAYSCALE_TOLERANCE = 30       # Återställd
+MAX_CLUSTER_DIM = 400             # Ökad för bättre färgdetektering
+KMEANS_N_INIT = 5                 # Ny: kör 5x, välj bästa
+NEAR_WHITE_THRESHOLD = 220        # Ny: exkludera highlights
+```
+
+### Testresultat (5/5 PASS)
+
+| Logga | Byten | Status |
+|-------|-------|--------|
+| Cantagalo | 2 (guld) | ✅ PASS |
+| Chicago Blues | 2 (blå, röd) | ✅ PASS |
+| leopards | 2 (orange, gul) | ✅ PASS |
+| **special_knivstais** | 1 (guld) | ✅ PASS |
+| team_usa | 1 (röd) | ✅ PASS |
+
+Rapport: `out/color_correction_test.html`
+
+---
+
+## Session (2026-09-14)
 
 ### Vad vi gjorde
 
@@ -62,18 +102,19 @@ Senast uppdaterad: 2026-09-15
 
 ## Nästa steg
 
-1. **Ladda upp scripts till apiai.me** — se `APIAI_SETUP.md` för lista
-2. **Sätt upp pipeline** — följ `APIAI_SETUP.md` steg-för-steg
-3. **Testa med eval set** — 10 loggor, verifiera 5 MP output
-4. **Heja testar i produktion**
+1. **Verifiera HTML-rapporten visuellt** — kolla att Knivsta ser bra ut
+2. **Committa fixen** — `scripts/correct_colors.py`
+3. **Ladda upp till apiai.me igen** — ersätt trasig version
+4. **Testa live på apiai.me** — verifiera att det fungerar i produktion
 
 ## Scratch-filer
 
 ```
 customers/heja/pipeline/scratch/
+├── test_fixed_correct_colors.py  # NY: Testar det riktiga scriptet
 ├── color_analysis_table.py       # Färganalys per logga
 ├── color_analysis_output.txt     # Senaste analysresultat
-├── run_color_correction_eval.py  # Kör korrigering + HTML-rapport
+├── run_color_correction_eval.py  # Kör korrigering + HTML-rapport (egen kopia)
 ├── test_color_correction.py      # Första test (Cantagalo)
 └── test_color_drift_gpt2.py      # Drift-analys (äldre)
 ```

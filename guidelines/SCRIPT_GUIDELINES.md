@@ -245,6 +245,12 @@ Three gates, in order — the **node**, then the **platform**, then the **site**
    the platform's Claude (which has all the apiai.me docs) for feedback — a platform-aware
    review. Address what it flags. **This IS the node's code review — skip the lifecycle's
    separate 05-review phase for nodes (no double review).**
+
+   **⚠️ Re-test after review changes.** The reviewer can suggest changes that break the script
+   (e.g. adjusting thresholds, swapping libraries, "simplifying" logic). After implementing
+   review feedback, **re-run the local test (step 1)** before proceeding. Never trust review
+   changes blindly — verify they work.
+
    **Fold generalizable feedback back into these guidelines.** When a flag is a *general*
    lesson (a rule any future node should follow), add it to §1–§9 — not just fix this script;
    only the general rule goes in, the script-specific detail stays in the code/commit. Same
