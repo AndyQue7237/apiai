@@ -64,8 +64,6 @@ Pipelinen har **två flöden** baserat på kvalitet:
 | `min_padding` | `5` |
 | `model` | `"florence-2"` |
 
-**Skip:** Aldrig (alltid första steget)
-
 ---
 
 ### 2. Check Quality
