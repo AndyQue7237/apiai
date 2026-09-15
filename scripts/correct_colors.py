@@ -53,7 +53,7 @@ MAX_REPLACEMENT_TOLERANCE = 15    # Maximum ΔE tolerance (cap for safety)
 MAX_CLUSTER_DIM = 400  # Increased from 200 for better color detection
 
 # K-means stability (simulate sklearn's n_init)
-KMEANS_N_INIT = 5  # Run clustering multiple times, pick best
+KMEANS_N_INIT = 10  # Run clustering multiple times, pick best (matches sklearn default)
 
 # Maximum ΔE for a valid color match (beyond this, it's not drift, it's wrong match)
 MAX_MATCH_DELTA_E = 40
