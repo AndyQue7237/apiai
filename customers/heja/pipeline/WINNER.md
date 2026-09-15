@@ -21,7 +21,7 @@ Pipelinen har två flöden: **låg kvalitet** (GPT2) och **hög kvalitet** (skip
 
 | # | Nod | Parametrar | Skip |
 |---|-----|------------|------|
-| 1 | Detect and Crop | `query="complete logo..."` · `min_padding=5` | — |
+| 1 | Detect and Crop | `query="complete logo..."` · `padding_percent=5` · `min_padding=50` · `safety_margin=30` | — |
 | 2 | Check Quality | `mp_high=1.0` · `mp_low=0.09` · `flatness=80` · `gradient=50` | Om `has_high_quality=true` → skip 5 (till nod 8) |
 | 3 | **GPT Image 2** | `background=transparent` · `output_format=png` · `quality=medium` · `size=auto` | — |
 | 4 | **Correct Colors** | `image_reference=steg 1` · `min_coverage=5` · `min_delta_e=10` · `n_clusters=12` | — |

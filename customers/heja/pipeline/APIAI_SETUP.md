@@ -56,13 +56,14 @@ Pipelinen har **två flöden** baserat på kvalitet:
 ### 1. Detect and Crop
 
 **Script:** `detect_and_crop.py`
-**Purpose:** Hitta och croppa loggan från bakgrunden
+**Purpose:** Hitta och croppa loggan från bakgrunden (använder Florence-2 via Replicate)
 
 | Parameter | Value |
 |-----------|-------|
-| `query` | `"complete logo with text and all design elements, full emblem"` |
-| `min_padding` | `5` |
-| `model` | `"florence-2"` |
+| `query` | `"complete logo with text, full team logo with text, entire emblem, club logo"` |
+| `padding_percent` | `5` |
+| `min_padding` | `50` |
+| `safety_margin` | `30` |
 
 ---
 
