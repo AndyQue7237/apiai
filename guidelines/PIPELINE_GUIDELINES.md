@@ -111,6 +111,96 @@ node is done, objectively, instead of eyeballing one lucky sample.
 
 ---
 
+## Skip logic in apiai.me
+
+apiai.me supports **conditional skipping** of nodes based on metadata fields from previous steps.
+This is critical for efficiency — don't run expensive AI steps when they're not needed.
+
+### How it works
+
+1. **Check nodes output boolean fields** — e.g. `is_transparent`, `is_high_quality`, `needs_enhancement`
+2. **Processing nodes read these fields** and skip if conditions are met
+3. **The image passes through unchanged** when skipped
+
+### Common skip patterns
+
+| Pattern | Check node outputs | Skip node if |
+|---------|-------------------|--------------|
+| Quality routing | `is_high_quality`, `needs_enhancement` | `is_high_quality=true` |
+| Transparency skip | `is_transparent` | `is_transparent=true` AND `is_high_quality=true` |
+| Resolution skip | `is_high_resolution` | `is_high_resolution=true` |
+
+### Example: GPT-2 + Color Correction skip
+
+```
+check_quality → check_transparency → GPT-2 → color_correction
+                      │                 │            │
+                      │                 └────────────┤
+                      │                              │
+                      └── if transparent + high_quality: SKIP BOTH
+```
+
+Both GPT-2 and color_correction are skipped together — color correction only makes sense
+after GPT-2 has run.
+
+### Best practices
+
+1. **Group related skips** — if node B only makes sense after node A, skip both together
+2. **Check early, skip late** — put check nodes as early as possible in the pipeline
+3. **Pass metadata through** — ensure boolean fields propagate through the pipeline
+4. **Name fields clearly** — `is_high_resolution` not `flag1`
+
+### Pipeline setup file
+
+For complex pipelines, create an `APIAI_SETUP.md` in the pipeline folder with:
+- Visual flow diagram (ASCII art)
+- Node-by-node parameter tables
+- Skip conditions per node
+- Scripts and requirements list
+- Test checklist
+
+See `customers/heja/pipeline/APIAI_SETUP.md` for a reference.
+
+---
+
+## Evaluating a pipeline on apiai.me
+
+Pipeline evaluation has **three distinct phases** — don't skip ahead:
+
+### Phase 1: Test each script individually
+
+Before wiring the pipeline, upload and test each script as a standalone API:
+
+1. Upload script to apiai.me
+2. Claude-in-apiai.me reviews and gives feedback
+3. Create API for the script
+4. Test with a few sample images
+5. Verify output is correct
+
+**Only proceed when ALL scripts pass individually.**
+
+### Phase 2: Set up the pipeline
+
+Wire the scripts together in apiai.me:
+
+1. Create the flow with correct node order
+2. Configure parameters per node (see `APIAI_SETUP.md`)
+3. Set up skip conditions / routing
+4. Wire `image_reference` params to "From Original" where needed
+
+### Phase 3: Run through eval set
+
+Run the complete pipeline on the full eval set:
+
+1. Process all images in the eval set
+2. Verify outputs meet criteria (resolution, quality, colors)
+3. Check skip logic worked correctly (transparent images skipped GPT-2)
+4. Document results in WINNER.md
+
+**The pipeline is only "done" when Phase 3 passes on the full eval set.**
+
+---
+
 ## WINNER.md — the canonical record of a proven pipeline
 
 Every pipeline folder gets a **WINNER.md** when a champion is chosen. It is the **single source of

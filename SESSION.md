@@ -1,12 +1,14 @@
 # Session Memory — apiai
 
-Senast uppdaterad: 2026-09-14
+Senast uppdaterad: 2026-09-15
 
 ## Aktuellt fokus
 
-**Color correction — apiai.me node KLAR**
+**Pipeline redo för apiai.me setup**
 
-Scriptet `correct_colors.py` är skapat och testat. Redo att laddas upp till apiai.me.
+- `correct_colors.py` — klar och testad
+- `APIAI_SETUP.md` — komplett instruktion för att sätta upp pipelinen
+- 5 MP minimum resolution med dubbel upscale (4x + 2x vid behov)
 
 ## Senaste sessionen (2026-09-14)
 
@@ -60,9 +62,10 @@ Scriptet `correct_colors.py` är skapat och testat. Redo att laddas upp till api
 
 ## Nästa steg
 
-1. **Ladda upp till apiai.me** — `scripts/correct_colors.py`
-2. **Koppla in i pipeline** — efter GPT-2 steget, med original som reference
-3. **Heja testar i produktion** — logga in, logga ut, ingen text
+1. **Ladda upp scripts till apiai.me** — se `APIAI_SETUP.md` för lista
+2. **Sätt upp pipeline** — följ `APIAI_SETUP.md` steg-för-steg
+3. **Testa med eval set** — 10 loggor, verifiera 5 MP output
+4. **Heja testar i produktion**
 
 ## Scratch-filer
 
