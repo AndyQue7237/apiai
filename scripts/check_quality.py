@@ -32,25 +32,34 @@ Params:
   flatness_threshold - flatness % below this triggers enhancement (default: "80")
   gradient_threshold - gradient % below this triggers enhancement for transparent images (default: "50")
 """
-import sys
-import json
-import base64
 import io
+import sys
+import logging
+from collections import Counter
+
 import numpy as np
 from PIL import Image
 
 try:
     from script_io import read_input, write_output, write_error
+    SCRIPT_IO_AVAILABLE = True
 except ImportError:
-    # Local testing fallback
-    pass
+    SCRIPT_IO_AVAILABLE = False
+
+log = logging.getLogger("check_quality")
+logging.basicConfig(stream=sys.stderr, level=logging.INFO,
+                    format="%(name)s %(levelname)s: %(message)s")
+
+# Gradient thresholds for edge analysis
+GRADIENT_SMOOTH_THRESHOLD = 50   # Below this = smooth anti-aliasing (good)
+GRADIENT_HARD_THRESHOLD = 200    # Above this = hard edges
 
 PARAM_DEFS = [
-    {"name": "field", "description": "Metadata field name for the result boolean", "default_value": "needs_enhancement"},
-    {"name": "mp_high_threshold", "description": "MP above this is always high quality (skip enhancement)", "default_value": "1.0"},
-    {"name": "mp_low_threshold", "description": "MP below this always needs enhancement", "default_value": "0.09"},
-    {"name": "flatness_threshold", "description": "Flatness % below this triggers enhancement (for borderline MP)", "default_value": "80"},
-    {"name": "gradient_threshold", "description": "Gradient % below this triggers enhancement for transparent images", "default_value": "50"},
+    {"name": "field", "type": "string", "description": "Metadata field name for the result boolean", "default_value": "needs_enhancement"},
+    {"name": "mp_high_threshold", "type": "float", "description": "MP above this is always high quality (skip enhancement)", "default_value": "1.0"},
+    {"name": "mp_low_threshold", "type": "float", "description": "MP below this always needs enhancement", "default_value": "0.09"},
+    {"name": "flatness_threshold", "type": "float", "description": "Flatness % below this triggers enhancement (for borderline MP)", "default_value": "80"},
+    {"name": "gradient_threshold", "type": "float", "description": "Gradient % below this triggers enhancement for transparent images", "default_value": "50"},
 ]
 
 
@@ -69,6 +78,8 @@ def calculate_flatness_percent(img, num_colors=16, tolerance=12):
     12 RGB units are considered the same). This prevents anti-aliasing and
     subtle gradients from artificially lowering the flatness score.
 
+    Transparent pixels (alpha=0) are excluded from the calculation.
+
     Args:
         img: PIL Image (RGB or RGBA)
         num_colors: Number of top colors to consider (default: 16)
@@ -77,11 +88,16 @@ def calculate_flatness_percent(img, num_colors=16, tolerance=12):
     Returns:
         float: Percentage of pixels using the top N colors (0-100)
     """
-    from collections import Counter
-
-    # Convert to RGB
-    rgb = img.convert('RGB')
-    pixels = list(rgb.getdata())
+    # Handle transparency: only include opaque pixels
+    if img.mode == 'RGBA':
+        pixels_array = np.array(img)
+        # Mask out fully transparent pixels (alpha < 128)
+        opaque_mask = pixels_array[:, :, 3] >= 128
+        rgb_pixels = pixels_array[:, :, :3][opaque_mask]
+        pixels = [tuple(p) for p in rgb_pixels]
+    else:
+        rgb = img.convert('RGB')
+        pixels = list(rgb.getdata())
 
     total_pixels = len(pixels)
     if total_pixels == 0:
@@ -150,12 +166,12 @@ def calculate_gradient_smooth(img):
     grad_mag = np.sqrt(gx**2 + gy**2)
 
     # Count edge pixels by gradient magnitude:
-    # - Small steps (< 50): smooth anti-aliasing (good)
-    # - Medium jumps (50-200): compression artifacts, poor AA (bad)
-    # - Large jumps (>= 200): hard edges (bad but expected for some logos)
-    small_steps = np.sum((grad_mag > 0) & (grad_mag < 50))
-    medium_jumps = np.sum((grad_mag >= 50) & (grad_mag < 200))
-    large_jumps = np.sum(grad_mag >= 200)
+    # - Small steps (< GRADIENT_SMOOTH_THRESHOLD): smooth anti-aliasing (good)
+    # - Medium jumps: compression artifacts, poor AA (bad)
+    # - Large jumps (>= GRADIENT_HARD_THRESHOLD): hard edges (bad but expected for some logos)
+    small_steps = np.sum((grad_mag > 0) & (grad_mag < GRADIENT_SMOOTH_THRESHOLD))
+    medium_jumps = np.sum((grad_mag >= GRADIENT_SMOOTH_THRESHOLD) & (grad_mag < GRADIENT_HARD_THRESHOLD))
+    large_jumps = np.sum(grad_mag >= GRADIENT_HARD_THRESHOLD)
 
     total_edges = small_steps + medium_jumps + large_jumps
     if total_edges == 0:
@@ -225,45 +241,93 @@ def check_quality(img, mp_high=1.0, mp_low=0.09, flatness_threshold=80, gradient
         "flatness_pct": round(flatness_pct, 1),
         "transparent": transparent,
         "gradient_pct": round(gradient_pct, 1) if gradient_pct is not None else None,
-        "reason": reason,
+        "quality_reason": reason,
         "needs_enhancement": needs_enhancement,
     }
 
     return needs_enhancement, metadata
 
 
-def main():
-    data = json.load(sys.stdin)
-    img_bytes = base64.b64decode(data["image"])
-    img = Image.open(io.BytesIO(img_bytes))
-    params = data.get("params", {})
+# ─────────────────────────── apiai.me entry ───────────────────────────
 
+def main():
+    """Entry point when running in apiai.me environment."""
+    body_bytes, content_type, params = read_input()
+    if not body_bytes:
+        write_error("No image provided")
+        return
+
+    try:
+        img = Image.open(io.BytesIO(body_bytes))
+    except Exception as e:
+        write_error(f"Could not decode image: {e}")
+        return
+
+    # Parse params
     field = params.get("field", "needs_enhancement")
-    mp_high = float(params.get("mp_high_threshold", "1.0"))
-    mp_low = float(params.get("mp_low_threshold", "0.09"))
-    flatness_threshold = float(params.get("flatness_threshold", "80"))
-    gradient_threshold = float(params.get("gradient_threshold", "50"))
+    try:
+        mp_high = float(params.get("mp_high_threshold", "1.0") or "1.0")
+        mp_low = float(params.get("mp_low_threshold", "0.09") or "0.09")
+        flatness_threshold = float(params.get("flatness_threshold", "80") or "80")
+        gradient_threshold = float(params.get("gradient_threshold", "50") or "50")
+    except ValueError as e:
+        write_error(f"Invalid numeric parameter: {e}")
+        return
 
     result, metadata = check_quality(img, mp_high, mp_low, flatness_threshold, gradient_threshold)
+
+    log.info("Quality check: MP=%.3f, flatness=%.1f%%, gradient=%s, result=%s (%s)",
+             metadata["megapixels"], metadata["flatness_pct"],
+             metadata["gradient_pct"], result, metadata["quality_reason"])
 
     # Pass image through as RGBA PNG
     out = img.convert("RGBA")
     buf = io.BytesIO()
     out.save(buf, format="PNG")
 
-    output = {
-        "image": base64.b64encode(buf.getvalue()).decode(),
-        "content_type": "image/png",
-        field: result,
-        "megapixels": metadata["megapixels"],
-        "flatness_pct": metadata["flatness_pct"],
-        "transparent": metadata["transparent"],
-        "gradient_pct": metadata["gradient_pct"],
-        "quality_reason": metadata["reason"],
-    }
+    # Output with metadata as kwargs
+    write_output(
+        buf.getvalue(),
+        "image/png",
+        **{
+            field: result,
+            "megapixels": metadata["megapixels"],
+            "flatness_pct": metadata["flatness_pct"],
+            "transparent": metadata["transparent"],
+            "gradient_pct": metadata["gradient_pct"],
+            "quality_reason": metadata["quality_reason"],
+        }
+    )
 
-    json.dump(output, sys.stdout)
+
+# ─────────────────────── local CLI entry point ───────────────────────
+
+def run_local_cli():
+    """File-based CLI for local testing without apiai.me runtime."""
+    import argparse
+
+    p = argparse.ArgumentParser(description="Check image quality for pipeline routing")
+    p.add_argument("input", help="Input image path")
+    p.add_argument("--mp-high", type=float, default=1.0, help="MP threshold for high quality")
+    p.add_argument("--mp-low", type=float, default=0.09, help="MP threshold for low quality")
+    p.add_argument("--flatness", type=float, default=80, help="Flatness threshold")
+    p.add_argument("--gradient", type=float, default=50, help="Gradient threshold")
+    args = p.parse_args()
+
+    img = Image.open(args.input)
+    result, metadata = check_quality(img, args.mp_high, args.mp_low, args.flatness, args.gradient)
+
+    print(f"Image: {args.input}")
+    print(f"  Size: {metadata['width']}x{metadata['height']} ({metadata['megapixels']} MP)")
+    print(f"  Flatness: {metadata['flatness_pct']:.1f}%")
+    print(f"  Transparent: {metadata['transparent']}")
+    if metadata['gradient_pct'] is not None:
+        print(f"  Gradient: {metadata['gradient_pct']:.1f}%")
+    print(f"  Needs enhancement: {result} ({metadata['quality_reason']})")
 
 
 if __name__ == "__main__":
-    main()
+    if SCRIPT_IO_AVAILABLE and len(sys.argv) <= 1:
+        main()
+    else:
+        run_local_cli()
