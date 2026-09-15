@@ -181,10 +181,16 @@ Before wiring the pipeline, upload and test each script as a standalone API:
 
 ### Phase 2: Set up the pipeline
 
-Wire the scripts together in apiai.me:
+Before wiring on apiai.me, **Claude creates an `APIAI_SETUP.md`** in the pipeline folder with:
+- Visual flow diagram (ASCII art)
+- Node-by-node tables with ALL parameters
+- Skip conditions per node
+- Scripts and requirements list
+
+Then wire the scripts together in apiai.me:
 
 1. Create the flow with correct node order
-2. Configure parameters per node (see `APIAI_SETUP.md`)
+2. Configure parameters per node (follow `APIAI_SETUP.md` exactly)
 3. Set up skip conditions / routing
 4. Wire `image_reference` params to "From Original" where needed
 
