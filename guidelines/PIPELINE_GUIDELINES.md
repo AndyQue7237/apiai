@@ -111,55 +111,114 @@ node is done, objectively, instead of eyeballing one lucky sample.
 
 ---
 
-## Skip logic in apiai.me
+## How apiai.me pipelines work
 
-apiai.me supports **conditional skipping** of nodes based on metadata fields from previous steps.
-This is critical for efficiency — don't run expensive AI steps when they're not needed.
+**CRITICAL:** apiai.me pipelines are **strictly linear** — not DAGs. Understanding this is
+essential for designing pipelines correctly.
 
-### How it works
+### Core constraints
 
-1. **Check nodes output boolean fields** — e.g. `is_transparent`, `is_high_quality`, `needs_enhancement`
-2. **Processing nodes read these fields** and skip if conditions are met
-3. **The image passes through unchanged** when skipped
+1. **Linear execution** — nodes run in order: 1 → 2 → 3 → ... → N
+2. **Skip by count** — skip logic specifies **number of nodes to skip**, not target node
+3. **One check per decision** — you can't combine two check nodes (only the last one's output is available)
+4. **End pipeline setting** — a node can terminate the pipeline early with `end_pipeline: true`
 
-### Common skip patterns
+### Skip mechanics
 
-| Pattern | Check node outputs | Skip node if |
-|---------|-------------------|--------------|
-| Quality routing | `is_high_quality`, `needs_enhancement` | `is_high_quality=true` |
-| Transparency skip | `is_transparent` | `is_transparent=true` AND `is_high_quality=true` |
-| Resolution skip | `is_high_resolution` | `is_high_resolution=true` |
-
-### Example: GPT-2 + Color Correction skip
+Each check node can trigger a skip:
 
 ```
-check_quality → check_transparency → GPT-2 → color_correction
-                      │                 │            │
-                      │                 └────────────┤
-                      │                              │
-                      └── if transparent + high_quality: SKIP BOTH
+Node 2: Check Quality
+  Field: has_high_quality
+  Value: true
+  Skip: 5          ← skips 5 nodes (jumps to node 8)
 ```
 
-Both GPT-2 and color_correction are skipped together — color correction only makes sense
-after GPT-2 has run.
+The skip count is **relative** — "skip 5" means skip the next 5 nodes from current position.
 
-### Best practices
+### Designing multi-flow pipelines
 
-1. **Group related skips** — if node B only makes sense after node A, skip both together
-2. **Check early, skip late** — put check nodes as early as possible in the pipeline
-3. **Pass metadata through** — ensure boolean fields propagate through the pipeline
-4. **Name fields clearly** — `is_high_resolution` not `flag1`
+Since pipelines are linear, multiple "flows" must be laid out sequentially:
+
+```
+FLOW A (low quality):     1 → 2 → 3 → 4 → 5 → 6 → 7 [END]
+FLOW B (high quality):    1 → 2 → [skip to 8] → 8 → 9 → ... → 14
+```
+
+**Pattern: Use `end_pipeline` to terminate Flow A early, so Flow B nodes don't run.**
+
+### Check node limitations
+
+**You cannot chain check nodes and combine their outputs.** Each check node outputs a field,
+but only the MOST RECENT check's field is available for skip logic.
+
+**Wrong:**
+```
+2. Check Quality (outputs has_high_quality)
+3. Check Transparency (outputs is_transparent)
+   Skip if: has_high_quality AND is_transparent  ← WON'T WORK
+```
+
+**Right:** Build a combined check script if you need multiple conditions:
+```
+2. Check Quality + Transparency (outputs should_skip_gpt2)
+   Skip if: should_skip_gpt2 = true
+```
+
+Or design the flow so each check handles its own skip independently.
+
+### Common patterns
+
+| Pattern | Implementation |
+|---------|----------------|
+| Two-flow pipeline | Flow A ends with `end_pipeline: true`, Flow B continues after |
+| Quality routing | Check Quality → skip N nodes if high quality |
+| Resolution loop | Check Res → Upscale 4x → Check Res → Upscale 2x (with skips) |
+| Edge case handling | Check Transparency → skip Remove Solid BG if already transparent |
+
+### Example: Heja Team Logo Pipeline (14 nodes)
+
+```
+LOW QUALITY FLOW:
+1. Detect & Crop
+2. Check Quality → skip 5 if high quality
+3. GPT2
+4. Color Correction
+5. Check Resolution → skip 1 if high res
+6. Upscale 4x
+7. Transparent Crop [END PIPELINE]
+
+HIGH QUALITY FLOW:
+8. Check Transparency → skip 1 if transparent
+9. Remove Solid Background
+10. Check Resolution → skip 3 if high res
+11. Upscale 4x
+12. Check Resolution → skip 1 if high res
+13. Upscale 2x
+14. Transparent Crop
+```
+
+Skip summary:
+| Node | Condition | Skip | Destination |
+|------|-----------|------|-------------|
+| 2 | `has_high_quality=true` | 5 | Node 8 |
+| 5 | `is_high_resolution=true` | 1 | Node 7 |
+| 7 | — | END | Pipeline terminates |
+| 8 | `is_transparent=true` | 1 | Node 10 |
+| 10 | `is_high_resolution=true` | 3 | Node 14 |
+| 12 | `is_high_resolution=true` | 1 | Node 14 |
 
 ### Pipeline setup file
 
 For complex pipelines, create an `APIAI_SETUP.md` in the pipeline folder with:
-- Visual flow diagram (ASCII art)
+- Visual flow diagram (ASCII art showing both flows)
 - Node-by-node parameter tables
-- Skip conditions per node
+- Skip conditions with node numbers and counts
+- End pipeline flags
 - Scripts and requirements list
 - Test checklist
 
-See `customers/heja/pipeline/APIAI_SETUP.md` for a reference.
+See `customers/heja/pipeline/APIAI_SETUP.md` for a complete reference.
 
 ---
 
