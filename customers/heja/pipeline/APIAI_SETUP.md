@@ -249,16 +249,27 @@ Remove background outside the team emblem. Important keep the logo identical wit
 
 ## Scripts Required
 
-Ladda upp dessa scripts till apiai.me:
+### Nya scripts att ladda upp
 
 | Script | Fil | Requirements |
 |--------|-----|--------------|
-| detect_and_crop | `scripts/detect_and_crop.py` | `Pillow`, `replicate` |
 | check_quality | `scripts/check_quality.py` | `Pillow`, `numpy` |
-| check_transparency | `scripts/check_transparency.py` | `Pillow` |
 | correct_colors | `scripts/correct_colors.py` | `Pillow`, `numpy`, `scikit-learn` |
-| check_resolution | `scripts/check_resolution.py` | `Pillow` |
-| crop_transparent | `scripts/crop_transparent.py` | `Pillow` |
+
+**check_quality — API Description:**
+> Analyzes image quality and outputs boolean flags for pipeline routing. Checks resolution (megapixels), color flatness, and edge gradients. Use this to decide if an image needs AI enhancement or can skip processing.
+
+**correct_colors — API Description:**
+> Corrects color drift between a generated image and a reference. Compares dominant colors using ΔE in CIELAB color space and replaces colors that have drifted beyond a threshold. Use this after AI image generation to restore original colors.
+
+### Befintliga scripts på apiai.me
+
+| Script | Requirements |
+|--------|--------------|
+| detect_and_crop | `Pillow`, `replicate` |
+| check_transparency | `Pillow` |
+| check_resolution | `Pillow` |
+| crop_transparent | `Pillow` |
 
 ---
 
