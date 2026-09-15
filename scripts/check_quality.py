@@ -23,10 +23,9 @@ Routing logic:
 - MP 0.09-1.0 + transparent + gradient < 50 → poor edge quality, needs enhancement
 - MP 0.09-1.0 + flatness >= 80% → acceptable quality
 
-Outputs the image unchanged plus a metadata field for pipeline conditions.
+Outputs the image unchanged plus `has_high_quality` boolean for pipeline routing.
 
 Params:
-  field              - metadata field name to write (default: "needs_enhancement")
   mp_high_threshold  - MP above this is always high quality (default: "1.0")
   mp_low_threshold   - MP below this always needs enhancement (default: "0.09")
   flatness_threshold - flatness % below this triggers enhancement (default: "80")
@@ -52,11 +51,7 @@ GRADIENT_HARD_EDGE_MIN = 200
 # Maximum dimension for quality analysis (downsample larger images for speed)
 MAX_ANALYSIS_DIM = 500
 
-# Reserved output field names that cannot be used as the 'field' param
-RESERVED_FIELDS = {"image", "content_type", "error"}
-
 PARAM_DEFS = [
-    {"name": "field", "type": "string", "description": "Metadata field name for the result boolean", "default_value": "needs_enhancement"},
     {"name": "mp_high_threshold", "type": "float", "description": "MP above this is always high quality (skip enhancement)", "default_value": "1.0"},
     {"name": "mp_low_threshold", "type": "float", "description": "MP below this always needs enhancement", "default_value": "0.09"},
     {"name": "flatness_threshold", "type": "float", "description": "Flatness % below this triggers enhancement (for borderline MP)", "default_value": "80"},
@@ -213,7 +208,7 @@ def check_quality(img, mp_high=1.0, mp_low=0.09, flatness_threshold=80, gradient
         gradient_threshold: Gradient % below this triggers enhancement (transparent only)
 
     Returns:
-        tuple: (needs_enhancement: bool, metadata: dict)
+        tuple: (has_high_quality: bool, metadata: dict)
     """
     width, height = img.size
     mp = (width * height) / 1_000_000
@@ -223,26 +218,26 @@ def check_quality(img, mp_high=1.0, mp_low=0.09, flatness_threshold=80, gradient
     transparent = is_transparent(img)
     gradient_pct = calculate_gradient_smooth(img) if transparent else None
 
-    # Routing logic
+    # Routing logic (has_high_quality = True means skip enhancement)
     if mp >= mp_high:
         # High resolution - assume good quality
-        needs_enhancement = False
+        has_high_quality = True
         reason = "high_mp"
     elif mp < mp_low:
         # Too small - needs AI reconstruction
-        needs_enhancement = True
+        has_high_quality = False
         reason = "low_mp"
     elif flatness_pct < flatness_threshold:
         # Borderline MP with low flatness = artifacts/noise
-        needs_enhancement = True
+        has_high_quality = False
         reason = "low_flatness"
     elif transparent and gradient_pct is not None and gradient_pct < gradient_threshold:
         # Transparent image with poor edge quality (medium jumps = artifacts)
-        needs_enhancement = True
+        has_high_quality = False
         reason = "low_gradient"
     else:
         # Acceptable quality
-        needs_enhancement = False
+        has_high_quality = True
         reason = "acceptable"
 
     metadata = {
@@ -253,10 +248,10 @@ def check_quality(img, mp_high=1.0, mp_low=0.09, flatness_threshold=80, gradient
         "transparent": transparent,
         "gradient_pct": round(gradient_pct, 1) if gradient_pct is not None else None,
         "quality_reason": reason,
-        "needs_enhancement": needs_enhancement,
+        "has_high_quality": has_high_quality,
     }
 
-    return needs_enhancement, metadata
+    return has_high_quality, metadata
 
 
 # ─────────────────────────── apiai.me entry ───────────────────────────
@@ -277,13 +272,6 @@ def main():
         return
 
     # Parse params
-    field = params.get("field", "needs_enhancement")
-
-    # Guard against reserved field names
-    if field in RESERVED_FIELDS:
-        write_error(f"Invalid field name '{field}' - reserved by platform")
-        return
-
     try:
         mp_high = float(params.get("mp_high_threshold", "1.0") or "1.0")
         mp_low = float(params.get("mp_low_threshold", "0.09") or "0.09")
@@ -298,11 +286,11 @@ def main():
         write_error(f"mp_low_threshold ({mp_low}) must be less than mp_high_threshold ({mp_high})")
         return
 
-    result, metadata = check_quality(img, mp_high, mp_low, flatness_threshold, gradient_threshold)
+    has_high_quality, metadata = check_quality(img, mp_high, mp_low, flatness_threshold, gradient_threshold)
 
-    log.info("Quality check: MP=%.3f, flatness=%.1f%%, gradient=%s, result=%s (%s)",
+    log.info("Quality check: MP=%.3f, flatness=%.1f%%, gradient=%s, has_high_quality=%s (%s)",
              metadata["megapixels"], metadata["flatness_pct"],
-             metadata["gradient_pct"], result, metadata["quality_reason"])
+             metadata["gradient_pct"], has_high_quality, metadata["quality_reason"])
 
     # Pass image through as RGBA PNG
     out = img.convert("RGBA")
@@ -313,14 +301,12 @@ def main():
     write_output(
         buf.getvalue(),
         "image/png",
-        **{
-            field: result,
-            "megapixels": metadata["megapixels"],
-            "flatness_pct": metadata["flatness_pct"],
-            "transparent": metadata["transparent"],
-            "gradient_pct": metadata["gradient_pct"],
-            "quality_reason": metadata["quality_reason"],
-        }
+        has_high_quality=has_high_quality,
+        megapixels=metadata["megapixels"],
+        flatness_pct=metadata["flatness_pct"],
+        transparent=metadata["transparent"],
+        gradient_pct=metadata["gradient_pct"],
+        quality_reason=metadata["quality_reason"],
     )
 
 
@@ -343,7 +329,7 @@ def run_local_cli():
         sys.exit(1)
 
     img = Image.open(args.input)
-    result, metadata = check_quality(img, args.mp_high, args.mp_low, args.flatness, args.gradient)
+    has_high_quality, metadata = check_quality(img, args.mp_high, args.mp_low, args.flatness, args.gradient)
 
     print(f"Image: {args.input}")
     print(f"  Size: {metadata['width']}x{metadata['height']} ({metadata['megapixels']} MP)")
@@ -351,7 +337,7 @@ def run_local_cli():
     print(f"  Transparent: {metadata['transparent']}")
     if metadata['gradient_pct'] is not None:
         print(f"  Gradient: {metadata['gradient_pct']:.1f}%")
-    print(f"  Needs enhancement: {result} ({metadata['quality_reason']})")
+    print(f"  Has high quality: {has_high_quality} ({metadata['quality_reason']})")
 
 
 if __name__ == "__main__":

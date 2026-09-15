@@ -15,7 +15,7 @@ Steg-för-steg instruktion för att sätta upp pipelinen på apiai.me.
                           ┌───────────────────────┴───────────────────────┐
                           │                                               │
                           ▼                                               ▼
-                   needs_enhancement                              transparent + high_quality
+                   has_high_quality=false                        transparent + has_high_quality
                           │                                               │
                           ▼                                               │
                  ┌─────────────────┐                                      │
@@ -92,14 +92,13 @@ Steg-för-steg instruktion för att sätta upp pipelinen på apiai.me.
 
 | Parameter | Value |
 |-----------|-------|
-| `mp_high` | `1.0` |
-| `mp_low` | `0.09` |
-| `flatness` | `80` |
-| `gradient` | `50` |
+| `mp_high_threshold` | `1.0` |
+| `mp_low_threshold` | `0.09` |
+| `flatness_threshold` | `80` |
+| `gradient_threshold` | `50` |
 
-**Output fields:**
-- `needs_enhancement` — true om kvalitet är låg
-- `is_high_quality` — true om kvalitet är hög
+**Output field:**
+- `has_high_quality` — true om kvalitet är hög, false om den behöver enhancement
 
 **Används för routing i steg 3**
 
@@ -119,7 +118,7 @@ Steg-för-steg instruktion för att sätta upp pipelinen på apiai.me.
 - `is_transparent` — true om redan transparent
 
 **Routing logic:**
-- Om `is_transparent=true` AND `is_high_quality=true` → **SKIP till steg 6**
+- Om `is_transparent=true` AND `has_high_quality=true` → **SKIP till steg 6**
 - Annars → fortsätt till steg 4
 
 ---
@@ -142,7 +141,7 @@ Steg-för-steg instruktion för att sätta upp pipelinen på apiai.me.
 Remove background outside the team emblem. Important keep the logo identical with shape and colours. The colours must match the original exactly.
 ```
 
-**Skip condition:** `is_transparent=true` AND `is_high_quality=true`
+**Skip condition:** `is_transparent=true` AND `has_high_quality=true`
 
 ---
 
@@ -158,7 +157,7 @@ Remove background outside the team emblem. Important keep the logo identical wit
 | `min_delta_e` | `10` |
 | `n_clusters` | `12` |
 
-**Skip condition:** Samma som steg 4 (`is_transparent=true` AND `is_high_quality=true`)
+**Skip condition:** Samma som steg 4 (`is_transparent=true` AND `has_high_quality=true`)
 
 > **Viktigt:** `image_reference` måste peka på originalbilden, inte föregående steg!
 
@@ -239,8 +238,8 @@ Remove background outside the team emblem. Important keep the logo identical wit
 
 | Steg | Skip om |
 |------|---------|
-| 4. GPT Image 2 | `is_transparent=true` AND `is_high_quality=true` |
-| 5. Color Correction | `is_transparent=true` AND `is_high_quality=true` |
+| 4. GPT Image 2 | `is_transparent=true` AND `has_high_quality=true` |
+| 5. Color Correction | `is_transparent=true` AND `has_high_quality=true` |
 | 7. Upscale 4x | `is_high_resolution=true` |
 | 8. Check Resolution 2 | `is_high_resolution=true` (från steg 6) |
 | 9. Upscale 2x | `is_high_resolution=true` (från steg 6 eller 8) |
