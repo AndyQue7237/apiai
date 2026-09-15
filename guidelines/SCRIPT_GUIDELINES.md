@@ -58,6 +58,21 @@ write_output(png_bytes, "image/png")               # success
 write_error("clear, user-facing message")          # failure
 ```
 
+**⚠️ NEVER use raw I/O.** Do not use `json.load(sys.stdin)` or `json.dump(..., sys.stdout)` —
+always use the `script_io` helpers. Raw I/O bypasses platform conventions and breaks silently.
+
+**Metadata as kwargs.** Extra output fields (booleans for routing, metrics, etc.) go as
+kwargs to `write_output()`, not as a manually assembled dict:
+
+```python
+# ✅ correct
+write_output(buf.getvalue(), "image/png", needs_enhancement=True, megapixels=0.5)
+
+# ❌ wrong — don't build the dict yourself
+output = {"image": b64, "content_type": "image/png", "needs_enhancement": True}
+json.dump(output, sys.stdout)
+```
+
 `script_io` isn't in this repo (the runtime provides it). Import it with a try/except
 fallback so the script still runs locally (see rule 9).
 
@@ -67,10 +82,13 @@ Declare every param in a module-level `PARAM_DEFS` list; the admin "Scan Script"
 
 ```python
 PARAM_DEFS = [
-    {"name": "image_reference", "description": "...", "default_value": "", "required": True},
-    {"name": "temperature",     "description": "0 = deterministic, max 1.", "default_value": "0.3"},
+    {"name": "image_reference", "type": "string", "description": "...", "default_value": "", "required": True},
+    {"name": "temperature", "type": "float", "description": "0 = deterministic, max 1.", "default_value": "0.3"},
 ]
 ```
+
+**Always include `type`.** Valid types: `"string"`, `"float"`, `"int"`, `"boolean"`. The
+platform uses this to validate inputs before the script runs.
 
 **🥇 Golden rule — `default_value` must be a plain string literal.** The scanner parses
 `PARAM_DEFS` **statically** (it does *not* run the module), so it can only read literal
@@ -179,6 +197,19 @@ result (e.g. a background, scene, or style to follow)."*
 - **Keep helpers at module level, not nested inside `process()`** — a nested closure can't be
   imported or unit-tested, and the smoke test (§10 / 07-verify) should be able to call small
   pure helpers (formatters, geometry, validators) directly.
+- **All imports at top level** — don't import inside functions (e.g. `from collections import
+  Counter` belongs at the top, not inside `calculate_flatness()`). Top-level imports are
+  clearer and slightly faster on repeated calls.
+- **Named constants for magic numbers** — thresholds, limits, and other tunable values should
+  be module-level constants with descriptive names, not inline numbers:
+  ```python
+  # ✅ correct
+  GRADIENT_SMOOTH_THRESHOLD = 50
+  if grad_mag < GRADIENT_SMOOTH_THRESHOLD: ...
+
+  # ❌ wrong — magic number
+  if grad_mag < 50: ...
+  ```
 - **Always ship a local CLI** so the script runs without the apiai.me runtime — the
   `if SCRIPT_IO_AVAILABLE and len(sys.argv) <= 1: main() else run_local_cli()` pattern.
   Load `.env` for local runs; the runtime sets env vars natively.
