@@ -194,6 +194,23 @@ result (e.g. a background, scene, or style to follow)."*
   **deterministic** node the choices it made (e.g. final size, which branch/bound was taken).
   Set up `log = logging.getLogger(__name__)` even on non-AI nodes so production issues are
   traceable — a placement/geometry node that "landed wrong" is far easier to debug with a line.
+- **Vectorize pixel operations** — never loop pixel-by-pixel in Python. A 1000×1000 image = 1M
+  iterations, each with overhead. Use numpy array ops or `skimage` functions instead:
+  ```python
+  # ❌ wrong — painfully slow
+  for y in range(h):
+      for x in range(w):
+          pixel_lab = rgb_to_lab(pixels[y, x])
+          if delta_e(pixel_lab, target) < tolerance: ...
+
+  # ✅ correct — vectorized
+  all_lab = skimage.color.rgb2lab(pixels[:, :, :3] / 255.0)
+  delta_e = np.sqrt(np.sum((all_lab - target_lab) ** 2, axis=2))
+  mask = delta_e < tolerance
+  ```
+- **Downsample for analysis** — statistical properties (color distribution, flatness, gradients)
+  are preserved at smaller sizes. Resize to max 200–500px before expensive analysis like k-means
+  clustering or per-pixel Lab conversion. The full-res image is only needed for the final output.
 - **Document intentional edge behaviour** in the docstring — silent clipping, truncation,
   off-canvas overflow, degenerate inputs. If a node deliberately does something surprising,
   say so, or a reviewer (or your future self) will flag it as a bug. State the *why*, not just
