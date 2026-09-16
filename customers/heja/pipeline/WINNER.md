@@ -13,33 +13,39 @@ samtliga!"* Byts bara på ett nytt uttryckligt beslut — aldrig av en omkörnin
 10 loggor i setet. Kör `run_all.py --method v2` för hela batchen, eller `run_pipeline_v2.py` på
 en enskild fil.
 
-## Konfiguration (14 noder)
+## Konfiguration (19 noder)
 
 Pipelinen har två flöden: **låg kvalitet** (GPT2) och **hög kvalitet** (skip GPT2).
+Condition-noder räknas som egna steg.
 
-### Låg kvalitet-flöde (nod 1-7, END)
+### Låg kvalitet-flöde (nod 1-9, END)
 
-| # | Nod | Parametrar | Skip |
-|---|-----|------------|------|
-| 1 | Detect and Crop | `query="complete logo..."` · `min_padding=5` | — |
-| 2 | Check Quality | `mp_high=1.0` · `mp_low=0.09` · `flatness=80` · `gradient=50` | Om `has_high_quality=true` → skip 5 (till nod 8) |
-| 3 | **GPT Image 2** | `background=transparent` · `output_format=png` · `quality=medium` · `size=auto` | — |
-| 4 | **Correct Colors** | `image_reference=original` · `auto_crop_reference=true` · `min_coverage=5` · `min_delta_e=10` | — |
-| 5 | Check Resolution | `min_pixels=5000000` | Om `is_high_resolution=true` → skip 1 |
-| 6 | Upscale 4x | `scale=4` · `face_enhance=false` | — |
-| 7 | Transparent Crop | `format=1:1` · `margin=10` · `alpha_threshold=10` | **END PIPELINE** |
+| # | Nod | Parametrar |
+|---|-----|------------|
+| 1 | Detect and Crop | `query="complete logo..."` · `min_padding=5` |
+| 2 | Check Quality | `mp_high=1.0` · `mp_low=0.09` · `flatness=80` · `gradient=50` |
+| 3 | **Condition** | skip 6 when `has_high_quality`=`true` → nod 10 |
+| 4 | **GPT Image 2** | `background=transparent` · `output_format=png` · `quality=medium` · `size=auto` |
+| 5 | **Correct Colors** | `image_reference=original` · `auto_crop_reference=true` · `min_coverage=5` · `min_delta_e=10` |
+| 6 | Check Resolution | `min_pixels=5000000` |
+| 7 | **Condition** | skip 1 when `is_high_resolution`=`true` → nod 9 |
+| 8 | Upscale 4x | `scale=4` · `face_enhance=false` |
+| 9 | Transparent Crop | `format=1:1` · `margin=10` · `alpha_threshold=10` · **END PIPELINE** |
 
-### Hög kvalitet-flöde (nod 8-14)
+### Hög kvalitet-flöde (nod 10-19)
 
-| # | Nod | Parametrar | Skip |
-|---|-----|------------|------|
-| 8 | Check Transparency | `sample_percent=5` · `threshold=250` | Om `is_transparent=true` → skip 1 |
-| 9 | Remove Solid BG | `bg_color=auto` · `tolerance=20` · `feather=1` | — |
-| 10 | Check Resolution | `min_pixels=5000000` | Om `is_high_resolution=true` → skip 3 (till nod 14) |
-| 11 | Upscale 4x | `scale=4` · `face_enhance=false` | — |
-| 12 | Check Resolution | `min_pixels=5000000` | Om `is_high_resolution=true` → skip 1 |
-| 13 | Upscale 2x | `scale=2` · `face_enhance=false` | — |
-| 14 | Transparent Crop | `format=1:1` · `margin=10` · `alpha_threshold=10` | — |
+| # | Nod | Parametrar |
+|---|-----|------------|
+| 10 | Check Transparency | `sample_percent=5` · `threshold=250` |
+| 11 | **Condition** | skip 1 when `is_transparent`=`true` → nod 13 |
+| 12 | Remove Solid BG | `bg_color=auto` · `tolerance=20` · `feather=1` · `detections=false` · `remove_holes_threshold=0` |
+| 13 | Check Resolution | `min_pixels=5000000` |
+| 14 | **Condition** | skip 4 when `is_high_resolution`=`true` → nod 19 |
+| 15 | Upscale 4x | `scale=4` · `face_enhance=false` |
+| 16 | Check Resolution | `min_pixels=5000000` |
+| 17 | **Condition** | skip 1 when `is_high_resolution`=`true` → nod 19 |
+| 18 | Upscale 2x | `scale=2` · `face_enhance=false` |
+| 19 | Transparent Crop | `format=1:1` · `margin=10` · `alpha_threshold=10` |
 
 ### Prompt (ordagrant)
 

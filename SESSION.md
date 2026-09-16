@@ -4,110 +4,68 @@ Senast uppdaterad: 2026-09-15
 
 ## Aktuellt fokus
 
-**Fix av correct_colors.py efter apiai.me review**
+**remove_solid_background — beslut väntar**
 
-- `correct_colors.py` — fixad efter att apiai.me-review bröt Knivsta-loggan
-- Alla 5 testloggor passerar igen (5/5 PASS)
-- **Nästa:** Committa fix, ladda upp till apiai.me
+Två versioner:
+1. **Vår lokala** (`scripts/remove_solid_background.py`) — enkel flood-fill från kanter
+2. **apiai.me version** — har `detections` (Grounding DINO) + `remove_holes_threshold`
 
-## Senaste sessionen (2026-09-15)
+### Problemet
 
-### Vad som hände
+| Logo | Vår lokala | apiai.me (holes=2) | apiai.me (holes=0) |
+|------|-----------|-------------------|-------------------|
+| Warner | ✅ Vit cirkel bevarad | ❌ Vit borttagen | ✅ Fixat |
+| Trollbäcken | ❌ Hål i små bokstäver | ✅ Hål fyllda | ❌ Vita fläckar |
 
-1. **Script fungerade lokalt** (2026-09-14)
-2. **Laddades upp till apiai.me** → Claude-in-apiai.me granskade
-3. **Review-ändringar pajade scriptet** — speciellt Knivsta-loggan
-4. **Identifierade problemet** — jämförde commit `42df044` (fungerade) med `e0311b7` (trasig)
+### Beslut att fatta
 
-### Problemet (apiai.me review ändrade fel)
+- `remove_holes_threshold` fyller hål i samma färg — användbart för text
+- `detections` använder Grounding DINO — men DINO är nere på Replicate
+- Tanken: detektor skyddar objekt (ex "logo"), men text kan uppfattas som logo → skyddar fel
 
-| Ändring | Före (fungerade) | Efter (trasig) |
-|---------|------------------|----------------|
-| BW_GRAYSCALE_TOLERANCE | 30 | 20 |
-| MAX_CLUSTER_DIM | — | 200 (ny, för liten) |
-| K-means | sklearn (n_init=10) | scipy kmeans2 (instabil) |
-
-### Fixen (ocommittade ändringar)
-
-```python
-BW_GRAYSCALE_TOLERANCE = 30       # Återställd
-MAX_CLUSTER_DIM = 400             # Ökad för bättre färgdetektering
-KMEANS_N_INIT = 5                 # Ny: kör 5x, välj bästa
-NEAR_WHITE_THRESHOLD = 220        # Ny: exkludera highlights
-```
-
-### Testresultat (5/5 PASS)
-
-| Logga | Byten | Status |
-|-------|-------|--------|
-| Cantagalo | 2 (guld) | ✅ PASS |
-| Chicago Blues | 2 (blå, röd) | ✅ PASS |
-| leopards | 2 (orange, gul) | ✅ PASS |
-| **special_knivstais** | 1 (guld) | ✅ PASS |
-| team_usa | 1 (röd) | ✅ PASS |
-
-Rapport: `out/color_correction_test.html`
+**Alternativ:**
+1. Ladda upp vårt enklare script (utan holes/detections)
+2. Behåll apiai.me version, hitta rätt threshold
+3. Förbättra vårt script med holes-funktionalitet (utan DINO)
 
 ---
 
-## Session (2026-09-14)
+## correct_colors.py — KLAR
+
+- `auto_crop_reference=true` som default
+- Croppar referensbilden internt via Florence-2
+- Testat lokalt: fungerar på leopards
+- Commit: `44d413a`
+- **Nästa:** Ladda upp till apiai.me
+
+---
+
+## Sessionen (2026-09-15)
 
 ### Vad vi gjorde
 
-1. **Skapade apiai.me node** — `scripts/correct_colors.py`
-   - Tar emot genererad bild (body) + original (image_reference param)
-   - Parametrar: min_coverage (5%), min_delta_e (10), n_clusters (12)
-   - Testad lokalt på Cantagalo, Chicago, leopards — alla fungerar
+1. **detect_and_crop fix** — `min_padding=5` (inte 50)
+2. **correct_colors.py** — la till `auto_crop_reference` + `crop_query`
+3. **remove_solid_background** — upptäckte skillnad mellan lokal/apiai.me version
 
-2. **Byggde color correction** — automatisk färgkorrigering för GPT-2 loggor
-   - Prototyp: `scratch/run_color_correction_eval.py`
-   - HTML-rapport: `out/color_correction_steps.html`
+### Dokumentation uppdaterad
 
-3. **Analysverktyg** — detaljerad färganalys per logga
-   - Script: `scratch/color_analysis_table.py`
-   - Output: `scratch/color_analysis_output.txt`
+- `APIAI_SETUP.md` — nya params för correct_colors + remove_solid_background
+- `WINNER.md` — uppdaterade parametrar
 
-4. **Testade på 5 GPT-2 loggor** — alla fungerar efter fix
+### Commits
 
-### Metoden
+- `44d413a` Add auto_crop_reference to correct_colors.py
 
-```
-1. Extrahera färger från genererad bild (12 kluster, exkludera svart/vit)
-2. För varje färg >5% med ΔE >10 från original → byt färg
-3. Smart tolerans (ΔE/2) → undviker att byta liknande-men-olika färger
-```
+---
 
-### Resultat
+## Nästa session
 
-| Logga | Byten | Resultat |
-|-------|-------|----------|
-| Cantagalo | 1 (guld) | ✅ Bra |
-| Chicago Blues | 2 (blå, röd) | ✅ Bra (efter fix för två blå nyanser) |
-| leopards | 2 (orange, gul) | ✅ Bra |
-| special_knivstais | 1 (guld) | ✅ Bra |
-| team_usa | 1 (röd) | ✅ Bra |
+1. Besluta om remove_solid_background (ladda upp vår eller justera apiai.me)
+2. Ladda upp correct_colors.py till apiai.me
+3. Testa hela pipelinen på apiai.me
 
-### Lärdomar
-
-- **Svart/vit driftar aldrig** → exkluderas från analys
-- **Röda färger driftar mest** → blir fluorescerande
-- **Guld/orange plattas** → nyanser slås ihop
-- **Smart tolerans krävs** → Chicago hade två blå, naiv metod bytte fel
-
-### Risker
-
-- **Låg risk** för enkla loggor (2-4 distinkta färger)
-- **Medel risk** för loggor med flera nyanser av samma färg
-- **Användaren godkänner alltid** → säkerhetsnät
-
-## Nästa steg
-
-1. ~~Verifiera HTML-rapporten visuellt~~ ✅
-2. ~~Committa fixen~~ ✅ `d6d8b46`
-3. ~~Ladda upp till apiai.me~~ ✅
-4. ~~Testa live på apiai.me~~ ✅ 5/5 PASS
-
-**Klart!** Scriptet fungerar. Nästa: använd i pipeline.
+---
 
 ## Scratch-filer
 
@@ -115,15 +73,16 @@ Rapport: `out/color_correction_test.html`
 customers/heja/pipeline/scratch/
 ├── test_apiai_all_logos.py       # Testar alla 5 mot apiai.me API
 ├── test_apiai_correct_colors.py  # Testar en logga mot apiai.me API
-├── test_fixed_correct_colors.py  # Testar lokalt mot scripts/correct_colors.py
-├── color_analysis_table.py       # Färganalys per logga
-├── run_color_correction_eval.py  # Kör korrigering + HTML-rapport (egen kopia)
 └── (äldre testfiler...)
 ```
 
-## ΔE-tolkning (för referens)
+## Lokala testbilder
 
-- 0-5: OK (knappt synbart)
-- 5-10: Drift (synbart vid jämförelse)
-- 10-15: Tydlig drift (bör korrigeras)
-- 15+: Allvarligt (måste korrigeras)
+```
+customers/heja/pipeline/out/
+├── Warner-v2-gradient-4b-removebg.png      # Warner lokal — vit bevarad ✅
+├── Warner-v2-gradient-7-final.png
+├── Trollbäckens GK-v2-gradient-4b-removebg.png  # Trollbäcken lokal — hål i text
+├── Trollbäckens GK-v2-gradient-7-final.png
+└── leopards_autocrop_test.png              # Color correction test ✅
+```

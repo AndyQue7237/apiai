@@ -119,22 +119,32 @@ essential for designing pipelines correctly.
 ### Core constraints
 
 1. **Linear execution** — nodes run in order: 1 → 2 → 3 → ... → N
-2. **Skip by count** — skip logic specifies **number of nodes to skip**, not target node
+2. **Condition is a separate node** — skip logic is NOT embedded in check nodes
 3. **One check per decision** — you can't combine two check nodes (only the last one's output is available)
 4. **End pipeline setting** — a node can terminate the pipeline early with `end_pipeline: true`
 
-### Skip mechanics
+### Condition nodes
 
-Each check node can trigger a skip:
+Skip logic is handled by **Condition nodes** which are separate from check nodes. A condition node
+has 3 parameters:
+
+| Parameter | Description |
+|-----------|-------------|
+| `Skip next` | Number of nodes to skip (X) |
+| `When field` | The field to check (Y) |
+| `Is value` | The value to match (Z) — `true` or `false` |
+
+**Condition nodes count towards total node count!** A 14-node pipeline becomes 19 nodes when you
+add 5 condition nodes.
 
 ```
-Node 2: Check Quality
-  Field: has_high_quality
-  Value: true
-  Skip: 5          ← skips 5 nodes (jumps to node 8)
+Node 2: Check Quality        ← outputs has_high_quality
+Node 3: Condition            ← skip 6 when has_high_quality = true
+Node 4: GPT Image 2
+...
 ```
 
-The skip count is **relative** — "skip 5" means skip the next 5 nodes from current position.
+The skip count is **relative** — "skip 6" means skip the next 6 nodes from current position.
 
 ### Designing multi-flow pipelines
 
@@ -176,37 +186,44 @@ Or design the flow so each check handles its own skip independently.
 | Resolution loop | Check Res → Upscale 4x → Check Res → Upscale 2x (with skips) |
 | Edge case handling | Check Transparency → skip Remove Solid BG if already transparent |
 
-### Example: Heja Team Logo Pipeline (14 nodes)
+### Example: Heja Team Logo Pipeline (19 nodes)
+
+With condition nodes as separate steps:
 
 ```
-LOW QUALITY FLOW:
+LOW QUALITY FLOW (nod 1-9):
 1. Detect & Crop
-2. Check Quality → skip 5 if high quality
-3. GPT2
-4. Color Correction
-5. Check Resolution → skip 1 if high res
-6. Upscale 4x
-7. Transparent Crop [END PIPELINE]
+2. Check Quality
+3. Condition (skip 6 when has_high_quality=true)
+4. GPT2
+5. Color Correction
+6. Check Resolution
+7. Condition (skip 1 when is_high_resolution=true)
+8. Upscale 4x
+9. Transparent Crop [END PIPELINE]
 
-HIGH QUALITY FLOW:
-8. Check Transparency → skip 1 if transparent
-9. Remove Solid Background
-10. Check Resolution → skip 3 if high res
-11. Upscale 4x
-12. Check Resolution → skip 1 if high res
-13. Upscale 2x
-14. Transparent Crop
+HIGH QUALITY FLOW (nod 10-19):
+10. Check Transparency
+11. Condition (skip 1 when is_transparent=true)
+12. Remove Solid Background
+13. Check Resolution
+14. Condition (skip 4 when is_high_resolution=true)
+15. Upscale 4x
+16. Check Resolution
+17. Condition (skip 1 when is_high_resolution=true)
+18. Upscale 2x
+19. Transparent Crop
 ```
 
-Skip summary:
-| Node | Condition | Skip | Destination |
-|------|-----------|------|-------------|
-| 2 | `has_high_quality=true` | 5 | Node 8 |
-| 5 | `is_high_resolution=true` | 1 | Node 7 |
-| 7 | — | END | Pipeline terminates |
-| 8 | `is_transparent=true` | 1 | Node 10 |
-| 10 | `is_high_resolution=true` | 3 | Node 14 |
-| 12 | `is_high_resolution=true` | 1 | Node 14 |
+Condition summary:
+| Node | Skip | When field | Is value | Destination |
+|------|------|------------|----------|-------------|
+| 3 | 6 | `has_high_quality` | `true` | Node 10 |
+| 7 | 1 | `is_high_resolution` | `true` | Node 9 |
+| 9 | — | — | — | END PIPELINE |
+| 11 | 1 | `is_transparent` | `true` | Node 13 |
+| 14 | 4 | `is_high_resolution` | `true` | Node 19 |
+| 17 | 1 | `is_high_resolution` | `true` | Node 19 |
 
 ### Pipeline setup file
 

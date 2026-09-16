@@ -6,52 +6,46 @@ Steg-för-steg instruktion för att sätta upp pipelinen på apiai.me.
 
 ## Pipeline Overview
 
-Pipelinen har **två flöden** baserat på kvalitet:
+Pipelinen har **två flöden** baserat på kvalitet och **19 noder** (inklusive condition-noder):
 
-- **Låg kvalitet:** GPT2 → Color Correction → Upscale → Crop [END]
-- **Hög kvalitet:** Transparency check → ev. Remove Solid BG → Upscale → Crop
+- **Låg kvalitet (nod 1-9):** GPT2 → Color Correction → Upscale → Crop [END]
+- **Hög kvalitet (nod 10-19):** Transparency check → ev. Remove Solid BG → Upscale → Crop
 
 ```
-┌─────────────────────────────────────────────────────────────────────────────┐
-│                           LÅG KVALITET FLÖDE                                │
-├─────────────────────────────────────────────────────────────────────────────┤
-│                                                                             │
-│  1. Detect    2. Check      3. GPT2    4. Correct   5. Check   6. Upscale  │
-│     & Crop  ──▶  Quality  ──▶        ──▶  Colors  ──▶  Res   ──▶   4x     │
-│                    │                                    │                   │
-│                    │ has_high_quality=false             │ skip if high      │
-│                    ▼                                    ▼                   │
-│                                                                             │
-│                                               7. Transparent Crop [END]     │
-│                                                                             │
-└─────────────────────────────────────────────────────────────────────────────┘
+┌─────────────────────────────────────────────────────────────────────────────────┐
+│                           LÅG KVALITET FLÖDE (nod 1-9)                          │
+├─────────────────────────────────────────────────────────────────────────────────┤
+│                                                                                 │
+│  1. Detect    2. Check    3. Cond    4. GPT2    5. Correct   6. Check   7. Cond│
+│     & Crop ──▶ Quality ──▶ skip 6 ──▶        ──▶  Colors  ──▶  Res   ──▶ skip 1│
+│                              │                                             │    │
+│                              │ if high_quality=true                        │    │
+│                              ▼ (till nod 10)                               ▼    │
+│                                                                                 │
+│                                           8. Upscale 4x ──▶ 9. Crop [END]      │
+│                                                                                 │
+└─────────────────────────────────────────────────────────────────────────────────┘
 
-┌─────────────────────────────────────────────────────────────────────────────┐
-│                           HÖG KVALITET FLÖDE                                │
-├─────────────────────────────────────────────────────────────────────────────┤
-│                                                                             │
-│  2. Check Quality                                                           │
-│        │                                                                    │
-│        │ has_high_quality=true (skip 5 noder till nod 8)                    │
-│        ▼                                                                    │
-│  8. Check         9. Remove        10. Check    11. Upscale                │
-│     Transparency ──▶ Solid BG    ──▶   Res    ──▶    4x                    │
-│        │               │               │                                    │
-│        │ skip if       │               │ skip if high                       │
-│        │ transparent   │               ▼                                    │
-│        ▼               ▼        12. Check    13. Upscale                   │
-│                                    Res     ──▶    2x                       │
-│                                     │                                       │
-│                                     │ skip if high                          │
-│                                     ▼                                       │
-│                              14. Transparent Crop                           │
-│                                                                             │
-└─────────────────────────────────────────────────────────────────────────────┘
+┌─────────────────────────────────────────────────────────────────────────────────┐
+│                           HÖG KVALITET FLÖDE (nod 10-19)                        │
+├─────────────────────────────────────────────────────────────────────────────────┤
+│                                                                                 │
+│  10. Check      11. Cond    12. Remove     13. Check    14. Cond               │
+│      Transp  ──▶  skip 1  ──▶  Solid BG  ──▶   Res   ──▶  skip 4              │
+│                     │                                       │                   │
+│                     │ if transparent=true                   │ if high_res=true  │
+│                     ▼ (till nod 13)                         ▼ (till nod 19)     │
+│                                                                                 │
+│  15. Upscale 4x ──▶ 16. Check Res ──▶ 17. Cond ──▶ 18. Upscale 2x ──▶ 19. Crop │
+│                                          │                                      │
+│                                          │ if high_res=true                     │
+│                                          ▼ (till nod 19)                        │
+└─────────────────────────────────────────────────────────────────────────────────┘
 ```
 
 ---
 
-## Node-by-Node Setup
+## Node-by-Node Setup (19 noder)
 
 ### 1. Detect and Crop
 
@@ -62,8 +56,6 @@ Pipelinen har **två flöden** baserat på kvalitet:
 |-----------|-------|
 | `query` | `"complete logo with text, full team logo with text, entire emblem, club logo"` |
 | `min_padding` | `5` |
-
-> **OBS:** Endast `query` och `min_padding` används. Övriga parametrar (`padding_percent`, `safety_margin`) har script-defaults som fungerar.
 
 ---
 
@@ -80,17 +72,25 @@ Pipelinen har **två flöden** baserat på kvalitet:
 | `gradient_threshold` | `50` |
 
 **Output field:** `has_high_quality`
-- `true` = hög kvalitet → skip till nod 8 (5 skips)
-- `false` = låg kvalitet → fortsätt till GPT2
-
-**Skip config:**
-- Field: `has_high_quality`
-- Value: `true`
-- Skip: `5` (till nod 8)
 
 ---
 
-### 3. GPT Image 2
+### 3. Condition (Quality routing)
+
+**Type:** Condition
+**Purpose:** Hoppa över GPT2-flödet om bilden redan har hög kvalitet
+
+| Parameter | Value |
+|-----------|-------|
+| Skip next | `6` |
+| When field | `has_high_quality` |
+| Is value | `true` |
+
+> Hoppar till nod 10 (Check Transparency)
+
+---
+
+### 4. GPT Image 2
 
 **Server:** OpenAI (direkt, inte via apiai.me script)
 **Purpose:** Ta bort bakgrund och förbättra loggan
@@ -110,7 +110,7 @@ Remove background outside the team emblem. Important keep the logo identical wit
 
 ---
 
-### 4. Correct Colors
+### 5. Correct Colors
 
 **Script:** `correct_colors.py`
 **Purpose:** Korrigera färgdrift från GPT-2
@@ -124,11 +124,11 @@ Remove background outside the team emblem. Important keep the logo identical wit
 | `auto_crop_reference` | `true` |
 | `crop_query` | `"complete logo with text, full team logo with text, entire emblem, club logo"` |
 
-> **OBS:** Med `auto_crop_reference=true` kan originalfilen användas direkt — scriptet croppar internt via Florence-2.
+> Med `auto_crop_reference=true` kan originalfilen användas direkt — scriptet croppar internt via Florence-2.
 
 ---
 
-### 5. Check Resolution (GPT2 flow)
+### 6. Check Resolution
 
 **Script:** `check_resolution.py`
 **Purpose:** Kolla om GPT2-output når tillräcklig upplösning
@@ -136,16 +136,27 @@ Remove background outside the team emblem. Important keep the logo identical wit
 | Parameter | Value |
 |-----------|-------|
 | `min_pixels` | `5000000` |
-| `field` | `is_high_resolution` |
 
-**Skip config:**
-- Field: `is_high_resolution`
-- Value: `true`
-- Skip: `1` (till nod 7)
+**Output field:** `is_high_resolution`
 
 ---
 
-### 6. Upscale 4x (GPT2 flow)
+### 7. Condition (Resolution skip)
+
+**Type:** Condition
+**Purpose:** Hoppa över Upscale om redan hög upplösning
+
+| Parameter | Value |
+|-----------|-------|
+| Skip next | `1` |
+| When field | `is_high_resolution` |
+| Is value | `true` |
+
+> Hoppar till nod 9 (Transparent Crop)
+
+---
+
+### 8. Upscale 4x
 
 **Server:** Replicate (Real-ESRGAN)
 **Purpose:** Skala upp GPT2-output
@@ -157,7 +168,7 @@ Remove background outside the team emblem. Important keep the logo identical wit
 
 ---
 
-### 7. Transparent Crop (GPT2 flow) [END PIPELINE]
+### 9. Transparent Crop [END PIPELINE]
 
 **Script:** `crop_transparent.py`
 **Purpose:** Slutlig croppning för GPT2-flödet
@@ -170,11 +181,11 @@ Remove background outside the team emblem. Important keep the logo identical wit
 
 **Pipeline setting:** `end_pipeline: true`
 
-> Bilder som når denna nod avslutar här — de fortsätter INTE till nod 8+.
+> Bilder som når denna nod avslutar här — de fortsätter INTE till nod 10+.
 
 ---
 
-### 8. Check Transparency
+### 10. Check Transparency
 
 **Script:** `check_transparency.py`
 **Purpose:** Kolla om bilden redan har transparent bakgrund
@@ -183,16 +194,27 @@ Remove background outside the team emblem. Important keep the logo identical wit
 |-----------|-------|
 | `sample_percent` | `5` |
 | `threshold` | `250` |
-| `field` | `is_transparent` |
 
-**Skip config:**
-- Field: `is_transparent`
-- Value: `true`
-- Skip: `1` (hoppa över Remove Solid Background)
+**Output field:** `is_transparent`
 
 ---
 
-### 9. Remove Solid Background
+### 11. Condition (Transparency skip)
+
+**Type:** Condition
+**Purpose:** Hoppa över Remove Solid Background om redan transparent
+
+| Parameter | Value |
+|-----------|-------|
+| Skip next | `1` |
+| When field | `is_transparent` |
+| Is value | `true` |
+
+> Hoppar till nod 13 (Check Resolution)
+
+---
+
+### 12. Remove Solid Background
 
 **Script:** `remove_solid_background.py`
 **Purpose:** Ta bort enfärgad bakgrund (för loggor som USA med solid fill)
@@ -202,12 +224,14 @@ Remove background outside the team emblem. Important keep the logo identical wit
 | `bg_color` | `auto` |
 | `tolerance` | `20` |
 | `feather` | `1` |
+| `detections` | `false` |
+| `remove_holes_threshold` | `0` |
 
-> **OBS:** Körs endast om `is_transparent=false`. Om loggan har olika färger i hörnen (inte solid) går den igenom utan ändring — det är korrekt beteende.
+> Körs endast om `is_transparent=false`.
 
 ---
 
-### 10. Check Resolution (High quality flow, första)
+### 13. Check Resolution
 
 **Script:** `check_resolution.py`
 **Purpose:** Kolla om bilden når 5 MP
@@ -215,16 +239,27 @@ Remove background outside the team emblem. Important keep the logo identical wit
 | Parameter | Value |
 |-----------|-------|
 | `min_pixels` | `5000000` |
-| `field` | `is_high_resolution` |
 
-**Skip config:**
-- Field: `is_high_resolution`
-- Value: `true`
-- Skip: `3` (till nod 14)
+**Output field:** `is_high_resolution`
 
 ---
 
-### 11. Upscale 4x (High quality flow)
+### 14. Condition (Resolution skip to final)
+
+**Type:** Condition
+**Purpose:** Hoppa direkt till final crop om redan hög upplösning
+
+| Parameter | Value |
+|-----------|-------|
+| Skip next | `4` |
+| When field | `is_high_resolution` |
+| Is value | `true` |
+
+> Hoppar till nod 19 (Transparent Crop)
+
+---
+
+### 15. Upscale 4x
 
 **Server:** Replicate (Real-ESRGAN)
 **Purpose:** Första uppskalningen
@@ -236,7 +271,7 @@ Remove background outside the team emblem. Important keep the logo identical wit
 
 ---
 
-### 12. Check Resolution (High quality flow, andra)
+### 16. Check Resolution
 
 **Script:** `check_resolution.py`
 **Purpose:** Kolla om 4x räckte
@@ -244,16 +279,27 @@ Remove background outside the team emblem. Important keep the logo identical wit
 | Parameter | Value |
 |-----------|-------|
 | `min_pixels` | `5000000` |
-| `field` | `is_high_resolution` |
 
-**Skip config:**
-- Field: `is_high_resolution`
-- Value: `true`
-- Skip: `1` (till nod 14)
+**Output field:** `is_high_resolution`
 
 ---
 
-### 13. Upscale 2x (High quality flow)
+### 17. Condition (Resolution skip 2x)
+
+**Type:** Condition
+**Purpose:** Hoppa över 2x upscale om 4x räckte
+
+| Parameter | Value |
+|-----------|-------|
+| Skip next | `1` |
+| When field | `is_high_resolution` |
+| Is value | `true` |
+
+> Hoppar till nod 19 (Transparent Crop)
+
+---
+
+### 18. Upscale 2x
 
 **Server:** Replicate (Real-ESRGAN)
 **Purpose:** Andra uppskalningen om 4x inte räckte
@@ -265,7 +311,7 @@ Remove background outside the team emblem. Important keep the logo identical wit
 
 ---
 
-### 14. Transparent Crop (High quality flow)
+### 19. Transparent Crop
 
 **Script:** `crop_transparent.py`
 **Purpose:** Slutlig croppning för high quality-flödet
@@ -278,40 +324,30 @@ Remove background outside the team emblem. Important keep the logo identical wit
 
 ---
 
-## Skip Logic Summary
+## Condition Summary
 
-| Nod | Field | Value | Skip | Destination |
-|-----|-------|-------|------|-------------|
-| 2 | `has_high_quality` | `true` | 5 | Nod 8 |
-| 5 | `is_high_resolution` | `true` | 1 | Nod 7 |
-| 7 | — | — | END | Pipeline slutar |
-| 8 | `is_transparent` | `true` | 1 | Nod 10 |
-| 10 | `is_high_resolution` | `true` | 3 | Nod 14 |
-| 12 | `is_high_resolution` | `true` | 1 | Nod 14 |
+| Nod | Skip | When field | Is value | Destination |
+|-----|------|------------|----------|-------------|
+| 3 | 6 | `has_high_quality` | `true` | Nod 10 |
+| 7 | 1 | `is_high_resolution` | `true` | Nod 9 |
+| 9 | — | — | — | END PIPELINE |
+| 11 | 1 | `is_transparent` | `true` | Nod 13 |
+| 14 | 4 | `is_high_resolution` | `true` | Nod 19 |
+| 17 | 1 | `is_high_resolution` | `true` | Nod 19 |
 
 ---
 
 ## Scripts Required
 
-### Scripts att ladda upp
-
-| Script | Fil | Purpose |
-|--------|-----|---------|
-| detect_and_crop | `scripts/detect_and_crop.py` | Hitta och croppa logga |
-| check_quality | `scripts/check_quality.py` | Kvalitetsrouting |
-| correct_colors | `scripts/correct_colors.py` | Färgkorrigering efter GPT2 |
-| check_transparency | `scripts/check_transparency.py` | Kolla transparens |
-| check_resolution | `scripts/check_resolution.py` | Kolla upplösning |
-| remove_solid_background | `scripts/remove_solid_background.py` | Ta bort solid bakgrund |
-| crop_transparent | `scripts/crop_transparent.py` | Slutlig crop |
-
-### API Descriptions
-
-**check_quality:**
-> Analyzes image quality and outputs boolean flags for pipeline routing. Checks resolution (megapixels), color flatness, and edge gradients. Use this to decide if an image needs AI enhancement or can skip processing.
-
-**correct_colors:**
-> Corrects color drift between a generated image and a reference. Compares dominant colors using ΔE in CIELAB color space and replaces colors that have drifted beyond a threshold. With auto_crop_reference=true, the reference image is automatically cropped using Florence-2 before color extraction — allowing use of the original uncropped file.
+| Script | Fil | Används i nod |
+|--------|-----|---------------|
+| detect_and_crop | `scripts/detect_and_crop.py` | 1 |
+| check_quality | `scripts/check_quality.py` | 2 |
+| correct_colors | `scripts/correct_colors.py` | 5 |
+| check_resolution | `scripts/check_resolution.py` | 6, 13, 16 |
+| crop_transparent | `scripts/crop_transparent.py` | 9, 19 |
+| check_transparency | `scripts/check_transparency.py` | 10 |
+| remove_solid_background | `scripts/remove_solid_background.py` | 12 |
 
 ---
 
@@ -319,9 +355,9 @@ Remove background outside the team emblem. Important keep the logo identical wit
 
 | Service | Noder | Usage |
 |---------|-------|-------|
-| OpenAI GPT Image 2 | 3 | Bakgrundsborttagning + enhancement |
-| Replicate Florence-2 | 4 | Auto-crop av referensbild (correct_colors) |
-| Replicate Real-ESRGAN | 6, 11, 13 | Uppskalning |
+| OpenAI GPT Image 2 | 4 | Bakgrundsborttagning + enhancement |
+| Replicate Florence-2 | 1, 5 | Logo-detektion, auto-crop av referensbild |
+| Replicate Real-ESRGAN | 8, 15, 18 | Uppskalning |
 
 ---
 
@@ -329,10 +365,10 @@ Remove background outside the team emblem. Important keep the logo identical wit
 
 1. [ ] Ladda upp alla scripts
 2. [ ] Skapa APIs för varje script
-3. [ ] Sätt upp pipeline med 14 noder
-4. [ ] Konfigurera skip-logik enligt tabell
-5. [ ] Sätt `end_pipeline: true` på nod 7
-6. [ ] **Test: Hög kvalitet + transparent** — ska skippa till nod 8, skippa nod 9, upscale vid behov
-7. [ ] **Test: Hög kvalitet + solid background** — ska skippa till nod 8, köra nod 9
-8. [ ] **Test: Låg kvalitet** — ska köra GPT2 → Color Correction → Upscale → END vid nod 7
+3. [ ] Sätt upp pipeline med **19 noder** (inkl. 5 condition-noder)
+4. [ ] Konfigurera conditions enligt tabell
+5. [ ] Sätt `end_pipeline: true` på nod 9
+6. [ ] **Test: Hög kvalitet + transparent** — ska hoppa 3→10→11→13, upscale vid behov
+7. [ ] **Test: Hög kvalitet + solid background** — ska hoppa 3→10, köra 12, upscale vid behov
+8. [ ] **Test: Låg kvalitet** — ska köra 4→5→6→7→8→9 [END]
 9. [ ] Kör hela eval set (10 loggor)
