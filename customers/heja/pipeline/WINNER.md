@@ -37,7 +37,7 @@ Condition-noder räknas som egna steg.
 | # | Nod | Parametrar |
 |---|-----|------------|
 | 10 | Check Transparency | `sample_percent=5` · `threshold=250` |
-| 11 | **Condition** | skip 1 when `is_transparent`=`true` → nod 13 |
+| 11 | **Condition** | skip 1 when `has_transparency`=`true` → nod 13 |
 | 12 | Remove Solid BG | `bg_color=auto` · `tolerance=20` · `feather=1` · `detections=false` · `remove_holes_threshold=0` |
 | 13 | Check Resolution | `min_pixels=5000000` |
 | 14 | **Condition** | skip 4 when `is_high_resolution`=`true` → nod 19 |

@@ -1,15 +1,13 @@
 #!/usr/bin/env python3
 """
-Check whether an image has a transparent background.
+Check if an image has transparency and ensure RGBA mode.
 
-Outputs the image unchanged plus a metadata field set to "true" or "false".
-The field name is configurable via the `field` param so it can feed directly
-into a condition node.
+Returns the image converted to RGBA. Adds a "has_transparency" field
+to the output JSON (true/false) for use in pipeline decisions.
 
 Params:
-  field          - metadata field name to write (default: "is_transparent")
-  threshold      - alpha value below which a pixel counts as transparent (default: 250)
-  sample_percent - % of sampled pixels that must be transparent to qualify (default: 10)
+  threshold - Alpha threshold for "transparent" (default: 250)
+  sample_percent - % of edge pixels that must be transparent (default: 10)
 """
 import sys
 import json
@@ -17,59 +15,91 @@ import base64
 import io
 from PIL import Image
 
+try:
+    from script_io import read_input, write_output, write_error
+    HAS_SCRIPT_IO = True
+except ImportError:
+    HAS_SCRIPT_IO = False
 
-def has_transparency(img, threshold=250, sample_percent=10):
-    """Return True if the image has meaningful transparency."""
-    if img.mode not in ("RGBA", "LA", "PA"):
+
+def check_transparency(img, threshold=250, sample_percent=10):
+    """Check if image has meaningful transparency."""
+    if img.mode not in ('RGBA', 'LA', 'PA'):
         return False
 
-    if img.mode != "RGBA":
-        img = img.convert("RGBA")
+    if img.mode != 'RGBA':
+        img = img.convert('RGBA')
 
     pixels = img.load()
-    w, h = img.size
+    width, height = img.size
 
-    transparent = 0
-    total = 0
+    transparent_count = 0
+    total_checked = 0
 
-    step_x = max(1, w // 20)
-    step_y = max(1, h // 20)
+    # Sample on a 20x20 grid
+    step_x = max(1, width // 20)
+    step_y = max(1, height // 20)
 
-    for x in range(0, w, step_x):
-        for y in range(0, h, step_y):
+    for x in range(0, width, step_x):
+        for y in range(0, height, step_y):
             _, _, _, a = pixels[x, y]
-            total += 1
+            total_checked += 1
             if a < threshold:
-                transparent += 1
+                transparent_count += 1
 
-    if total == 0:
+    if total_checked == 0:
         return False
 
-    return (transparent / total * 100) > sample_percent
+    return (transparent_count / total_checked * 100) > sample_percent
 
 
 def main():
-    data = json.load(sys.stdin)
-    img_bytes = base64.b64decode(data["image"])
-    img = Image.open(io.BytesIO(img_bytes))
-    params = data.get("params", {})
+    """Main entry point."""
+    if HAS_SCRIPT_IO:
+        # apiai.me runtime
+        input_bytes, content_type, params = read_input()
+        if not input_bytes:
+            write_error("no input image provided")
+            return
 
-    field = params.get("field", "is_transparent")
-    threshold = int(params.get("threshold", "250"))
-    sample_percent = int(params.get("sample_percent", "10"))
+        img = Image.open(io.BytesIO(input_bytes))
 
-    result = has_transparency(img, threshold, sample_percent)
+        threshold = int(params.get("threshold", "250"))
+        sample_percent = int(params.get("sample_percent", "10"))
 
-    # Pass image through as RGBA PNG
-    out = img.convert("RGBA")
-    buf = io.BytesIO()
-    out.save(buf, format="PNG")
+        has_alpha = check_transparency(img, threshold, sample_percent)
 
-    json.dump({
-        "image": base64.b64encode(buf.getvalue()).decode(),
-        "content_type": "image/png",
-        field: result,
-    }, sys.stdout)
+        # Always output as RGBA PNG
+        result = img.convert("RGBA")
+
+        buf = io.BytesIO()
+        result.save(buf, format="PNG")
+        write_output(
+            buf.getvalue(), "image/png",
+            has_transparency=has_alpha,
+        )
+    else:
+        # Local testing via stdin JSON
+        data = json.load(sys.stdin)
+        img_bytes = base64.b64decode(data["image"])
+        img = Image.open(io.BytesIO(img_bytes))
+        params = data.get("params", {})
+
+        threshold = int(params.get("threshold", "250"))
+        sample_percent = int(params.get("sample_percent", "10"))
+
+        has_alpha = check_transparency(img, threshold, sample_percent)
+
+        # Pass image through as RGBA PNG
+        out = img.convert("RGBA")
+        buf = io.BytesIO()
+        out.save(buf, format="PNG")
+
+        json.dump({
+            "image": base64.b64encode(buf.getvalue()).decode(),
+            "content_type": "image/png",
+            "has_transparency": has_alpha,
+        }, sys.stdout)
 
 
 if __name__ == "__main__":

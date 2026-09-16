@@ -165,8 +165,8 @@ but only the MOST RECENT check's field is available for skip logic.
 **Wrong:**
 ```
 2. Check Quality (outputs has_high_quality)
-3. Check Transparency (outputs is_transparent)
-   Skip if: has_high_quality AND is_transparent  ← WON'T WORK
+3. Check Transparency (outputs has_transparency)
+   Skip if: has_high_quality AND has_transparency  ← WON'T WORK
 ```
 
 **Right:** Build a combined check script if you need multiple conditions:
@@ -204,7 +204,7 @@ LOW QUALITY FLOW (nod 1-9):
 
 HIGH QUALITY FLOW (nod 10-19):
 10. Check Transparency
-11. Condition (skip 1 when is_transparent=true)
+11. Condition (skip 1 when has_transparency=true)
 12. Remove Solid Background
 13. Check Resolution
 14. Condition (skip 4 when is_high_resolution=true)
@@ -221,7 +221,7 @@ Condition summary:
 | 3 | 6 | `has_high_quality` | `true` | Node 10 |
 | 7 | 1 | `is_high_resolution` | `true` | Node 9 |
 | 9 | — | — | — | END PIPELINE |
-| 11 | 1 | `is_transparent` | `true` | Node 13 |
+| 11 | 1 | `has_transparency` | `true` | Node 13 |
 | 14 | 4 | `is_high_resolution` | `true` | Node 19 |
 | 17 | 1 | `is_high_resolution` | `true` | Node 19 |
 

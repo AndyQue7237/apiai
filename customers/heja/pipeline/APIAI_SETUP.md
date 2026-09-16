@@ -195,7 +195,7 @@ Remove background outside the team emblem. Important keep the logo identical wit
 | `sample_percent` | `5` |
 | `threshold` | `250` |
 
-**Output field:** `is_transparent`
+**Output field:** `has_transparency`
 
 ---
 
@@ -207,7 +207,7 @@ Remove background outside the team emblem. Important keep the logo identical wit
 | Parameter | Value |
 |-----------|-------|
 | Skip next | `1` |
-| When field | `is_transparent` |
+| When field | `has_transparency` |
 | Is value | `true` |
 
 > Hoppar till nod 13 (Check Resolution)
@@ -227,7 +227,7 @@ Remove background outside the team emblem. Important keep the logo identical wit
 | `detections` | `false` |
 | `remove_holes_threshold` | `0` |
 
-> Körs endast om `is_transparent=false`.
+> Körs endast om `has_transparency=false`.
 
 ---
 
@@ -331,7 +331,7 @@ Remove background outside the team emblem. Important keep the logo identical wit
 | 3 | 6 | `has_high_quality` | `true` | Nod 10 |
 | 7 | 1 | `is_high_resolution` | `true` | Nod 9 |
 | 9 | — | — | — | END PIPELINE |
-| 11 | 1 | `is_transparent` | `true` | Nod 13 |
+| 11 | 1 | `has_transparency` | `true` | Nod 13 |
 | 14 | 4 | `is_high_resolution` | `true` | Nod 19 |
 | 17 | 1 | `is_high_resolution` | `true` | Nod 19 |
 
