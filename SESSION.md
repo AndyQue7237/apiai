@@ -1,69 +1,86 @@
 # Session Memory — apiai
 
-Senast uppdaterad: 2026-09-15
+Senast uppdaterad: 2026-09-16
 
 ## Aktuellt fokus
 
-**remove_solid_background — beslut väntar**
+**correct_colors.py — white edge border feature KLAR**
 
-Två versioner:
-1. **Vår lokala** (`scripts/remove_solid_background.py`) — enkel flood-fill från kanter
-2. **apiai.me version** — har `detections` (Grounding DINO) + `remove_holes_threshold`
+Ny funktion som lägger till mörk border runt loggor med vita kanter (t.ex. Leopards).
 
-### Problemet
+### Nya parametrar
 
-| Logo | Vår lokala | apiai.me (holes=2) | apiai.me (holes=0) |
-|------|-----------|-------------------|-------------------|
-| Warner | ✅ Vit cirkel bevarad | ❌ Vit borttagen | ✅ Fixat |
-| Trollbäcken | ❌ Hål i små bokstäver | ✅ Hål fyllda | ❌ Vita fläckar |
+| Parameter | Default | Beskrivning |
+|-----------|---------|-------------|
+| `add_edge_border` | false | Aktivera white edge border |
+| `border_width` | 2 | Tjocklek i px (1-50) |
+| `border_color` | auto | Hex eller 'auto' (mörkaste färgen >5% coverage) |
+| `white_edge_threshold` | 240 | RGB-gräns för vit |
+| `white_edge_percent` | 20 | % av kant som måste vara vit |
 
-### Beslut att fatta
+### Algoritm
 
-- `remove_holes_threshold` fyller hål i samma färg — användbart för text
-- `detections` använder Grounding DINO — men DINO är nere på Replicate
-- Tanken: detektor skyddar objekt (ex "logo"), men text kan uppfattas som logo → skyddar fel
+1. Hitta objektkanten (alpha > 0 gränsar mot alpha = 0)
+2. Kolla om >X% av kantpixlarna är vita
+3. Om ja: hitta mörkaste färgen med >5% coverage
+4. Dilatera alpha-masken och fyll med mörk färg
+5. Auto-padda bilden om loggan är för nära kanten
 
-**Alternativ:**
-1. Ladda upp vårt enklare script (utan holes/detections)
-2. Behåll apiai.me version, hitta rätt threshold
-3. Förbättra vårt script med holes-funktionalitet (utan DINO)
+### Testat
 
----
-
-## correct_colors.py — KLAR
-
-- `auto_crop_reference=true` som default
-- Croppar referensbilden internt via Florence-2
-- Testat lokalt: fungerar på leopards
-- Commit: `44d413a`
-- **Nästa:** Ladda upp till apiai.me
+- Leopards (vita kanter 36.2%) → border läggs till ✅
+- Cantagalo (inga vita kanter 0%) → ingen border ✅
 
 ---
 
-## Sessionen (2026-09-15)
+## Pipeline-dokumentation uppdaterad
+
+### Condition nodes är separata steg
+
+apiai.me pipelines är linjära. Condition-noder räknas som egna steg:
+- Skip next X
+- When field Y
+- Is value Z (true/false)
+
+Pipeline gick från 14 → 19 noder med 5 condition-noder.
+
+### Uppdaterade filer
+
+- `PIPELINE_GUIDELINES.md` — ny sektion om condition nodes
+- `customers/heja/pipeline/APIAI_SETUP.md` — 19-nods struktur
+- `customers/heja/pipeline/WINNER.md` — uppdaterad konfiguration
+
+---
+
+## Sessionen (2026-09-16)
 
 ### Vad vi gjorde
 
-1. **detect_and_crop fix** — `min_padding=5` (inte 50)
-2. **correct_colors.py** — la till `auto_crop_reference` + `crop_query`
-3. **remove_solid_background** — upptäckte skillnad mellan lokal/apiai.me version
-
-### Dokumentation uppdaterad
-
-- `APIAI_SETUP.md` — nya params för correct_colors + remove_solid_background
-- `WINNER.md` — uppdaterade parametrar
+1. **White edge border** — ny funktion i correct_colors.py
+2. **Review-fixes** — apiai.me Claude review implementerad:
+   - Vektoriserad check_white_edges
+   - Pre-computed Lab conversion
+   - replicate.run() output handling
+   - Highlight detection (kräver hög ljusstyrka + låg mättnad)
+3. **Pipeline docs** — condition nodes dokumenterade
+4. **Scripts synkade** — check_transparency, remove_solid_background
 
 ### Commits
 
-- `44d413a` Add auto_crop_reference to correct_colors.py
+- `30d1f2b` Add white edge border feature to correct_colors.py
+- `c861c8a` Fix correct_colors.py based on apiai.me review
+- `3ed3ab3` Rename is_transparent -> has_transparency
+- `fe5b09e` Update remove_solid_background.py to match apiai.me
+- `fb34c2c` Update pipeline docs: condition nodes are separate steps
 
 ---
 
 ## Nästa session
 
-1. Besluta om remove_solid_background (ladda upp vår eller justera apiai.me)
-2. Ladda upp correct_colors.py till apiai.me
-3. Testa hela pipelinen på apiai.me
+1. **Ladda upp correct_colors.py** till apiai.me (ny version med border feature)
+2. **Testa på apiai.me** — kör review igen, verifiera fixes
+3. **Uppdatera pipeline** — lägg till add_edge_border=true i nod 5
+4. **Bestäm border_width** — 10px verkar bra på 4899px bilder
 
 ---
 
@@ -71,18 +88,19 @@ Två versioner:
 
 ```
 customers/heja/pipeline/scratch/
-├── test_apiai_all_logos.py       # Testar alla 5 mot apiai.me API
-├── test_apiai_correct_colors.py  # Testar en logga mot apiai.me API
-└── (äldre testfiler...)
+├── leopards_border_test.png          # 2px border test
+├── leopards_border_3px.png           # 3px border test
+├── leopards_border_10px.png          # 10px border test
+├── leopards_border_50px_padded.png   # 50px med auto-padding
+├── leopards_border_blue.png          # Custom color test
+├── cantagalo_border_test.png         # Cantagalo (ingen border) ✅
+└── cantagalo_gpt2_border_test.png    # GPT2 output test ✅
 ```
 
-## Lokala testbilder
+## Key learnings (denna session)
 
-```
-customers/heja/pipeline/out/
-├── Warner-v2-gradient-4b-removebg.png      # Warner lokal — vit bevarad ✅
-├── Warner-v2-gradient-7-final.png
-├── Trollbäckens GK-v2-gradient-4b-removebg.png  # Trollbäcken lokal — hål i text
-├── Trollbäckens GK-v2-gradient-7-final.png
-└── leopards_autocrop_test.png              # Color correction test ✅
-```
+1. **Condition nodes räknas** — 14 noder + 5 conditions = 19 noder totalt
+2. **Vectorize loops** — numpy boolean indexing snabbare än Python loops
+3. **Pre-compute Lab** — undvik att köra rgb2lab för varje färgbyte
+4. **Auto-padding** — border kan göra bilden större om loggan är nära kanten
+5. **Darkest color auto** — #163b4b (luminance 50) kan se svart ut, ge möjlighet till manuell färg
