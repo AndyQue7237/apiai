@@ -111,6 +111,36 @@ PARAM_DEFS = [
         "description": "Detection query for auto-crop (e.g. 'logo', 'product', 'subject'). Only used if auto_crop_reference is true.",
         "default_value": "complete logo with text, full team logo with text, entire emblem, club logo",
     },
+    {
+        "name": "add_edge_border",
+        "type": "boolean",
+        "description": "Add a dark border around objects with white edges. Useful for logos with white text/elements that disappear on white backgrounds. Default false.",
+        "default_value": "false",
+    },
+    {
+        "name": "border_width",
+        "type": "int",
+        "description": "Width of the edge border in pixels. Only used if add_edge_border is true. Range 1-50. Default 2.",
+        "default_value": "2",
+    },
+    {
+        "name": "border_color",
+        "type": "string",
+        "description": "Border color as hex (e.g. '#2d5a6b') or 'auto' to use darkest color from image. Default auto.",
+        "default_value": "auto",
+    },
+    {
+        "name": "white_edge_threshold",
+        "type": "int",
+        "description": "RGB threshold for detecting white edges (0-255). Pixels with all channels above this are considered white. Default 240.",
+        "default_value": "240",
+    },
+    {
+        "name": "white_edge_percent",
+        "type": "int",
+        "description": "Minimum percentage of edge pixels that must be white to trigger border addition. Range 5-50. Default 20.",
+        "default_value": "20",
+    },
 ]
 
 
@@ -428,6 +458,239 @@ def apply_color_correction(gen_img, ref_img, min_coverage, min_delta_e, n_cluste
     return img, actual_replacements
 
 
+# ───────────────────────── white edge border ─────────────────────────
+
+def find_edge_pixels(img):
+    """
+    Find pixels at the edge of the object (where alpha > 0 borders alpha = 0).
+
+    Returns array of (x, y) coordinates for edge pixels.
+    """
+    from scipy import ndimage
+
+    if img.mode != "RGBA":
+        img = img.convert("RGBA")
+
+    alpha = np.array(img)[:, :, 3]
+    opaque = alpha > 128
+
+    # Erode the opaque mask by 1 pixel
+    eroded = ndimage.binary_erosion(opaque)
+
+    # Edge pixels = opaque but not in eroded (the outer ring)
+    edge_mask = opaque & ~eroded
+
+    # Get coordinates
+    coords = np.argwhere(edge_mask)  # (y, x) format
+    return coords
+
+
+def check_white_edges(img, threshold=240, min_percent=20):
+    """
+    Check if a significant portion of the object's edge is white/near-white.
+
+    Args:
+        img: PIL Image (RGBA)
+        threshold: RGB value above which a pixel is considered white (all channels)
+        min_percent: Minimum percentage of edge pixels that must be white
+
+    Returns:
+        (has_white_edges, white_percent, total_edge_pixels)
+    """
+    if img.mode != "RGBA":
+        img = img.convert("RGBA")
+
+    pixels = np.array(img)
+    edge_coords = find_edge_pixels(img)
+
+    if len(edge_coords) == 0:
+        return False, 0.0, 0
+
+    # Sample edge pixel colors
+    white_count = 0
+    for y, x in edge_coords:
+        r, g, b = pixels[y, x, :3]
+        # All channels must be above threshold to be "white"
+        if r >= threshold and g >= threshold and b >= threshold:
+            white_count += 1
+
+    white_pct = (white_count / len(edge_coords)) * 100
+    has_white = white_pct >= min_percent
+
+    return has_white, white_pct, len(edge_coords)
+
+
+def find_darkest_color(img, min_coverage=5.0, n_clusters=12):
+    """
+    Find the darkest dominant color in the image with sufficient coverage.
+
+    Uses luminance (perceived brightness) to determine darkness:
+    L = 0.299*R + 0.587*G + 0.114*B
+
+    Returns (r, g, b) tuple or None if no suitable color found.
+    """
+    colors = extract_colors(img, n_colors=n_clusters, exclude_bw=True)
+
+    if not colors:
+        return None
+
+    # Filter by coverage and find darkest
+    darkest = None
+    darkest_lum = 256  # Start high
+
+    for color, pct in colors:
+        if pct < min_coverage:
+            continue
+        r, g, b = color[:3]
+        luminance = 0.299 * r + 0.587 * g + 0.114 * b
+        if luminance < darkest_lum:
+            darkest_lum = luminance
+            darkest = color
+
+    return darkest
+
+
+def add_border_around_object(img, border_color, border_width=2):
+    """
+    Add a colored border around the object (expand alpha mask and fill).
+
+    The border is added OUTSIDE the existing object pixels.
+    If the object is too close to the edge, the image is padded first.
+
+    Args:
+        img: PIL Image (RGBA)
+        border_color: (r, g, b) tuple for the border
+        border_width: Width of border in pixels
+
+    Returns:
+        PIL Image with border added (may be larger than input if padding was needed)
+    """
+    from scipy import ndimage
+
+    if img.mode != "RGBA":
+        img = img.convert("RGBA")
+
+    pixels = np.array(img, dtype=np.uint8)
+    alpha = pixels[:, :, 3]
+    opaque = alpha > 128
+
+    # Check if we need to pad the image
+    opaque_coords = np.argwhere(opaque)
+    if len(opaque_coords) == 0:
+        return img  # No opaque pixels, nothing to do
+
+    y_min, x_min = opaque_coords.min(axis=0)
+    y_max, x_max = opaque_coords.max(axis=0)
+    h, w = alpha.shape
+
+    # Calculate needed padding on each side
+    pad_left = max(0, border_width - x_min)
+    pad_right = max(0, border_width - (w - x_max - 1))
+    pad_top = max(0, border_width - y_min)
+    pad_bottom = max(0, border_width - (h - y_max - 1))
+
+    # Pad if necessary
+    if pad_left > 0 or pad_right > 0 or pad_top > 0 or pad_bottom > 0:
+        log.info("Padding image by (%d, %d, %d, %d) for border",
+                 pad_left, pad_right, pad_top, pad_bottom)
+        # Create new larger array with transparent padding
+        new_h = h + pad_top + pad_bottom
+        new_w = w + pad_left + pad_right
+        new_pixels = np.zeros((new_h, new_w, 4), dtype=np.uint8)
+        # Copy original into center
+        new_pixels[pad_top:pad_top+h, pad_left:pad_left+w] = pixels
+        pixels = new_pixels
+        # Update opaque mask for padded image
+        alpha = pixels[:, :, 3]
+        opaque = alpha > 128
+
+    # Dilate the opaque mask to create border area
+    dilated = ndimage.binary_dilation(opaque, iterations=border_width)
+
+    # Border pixels = dilated but NOT original opaque
+    border_mask = dilated & ~opaque
+
+    # Fill border pixels with the border color
+    pixels[border_mask, 0] = border_color[0]
+    pixels[border_mask, 1] = border_color[1]
+    pixels[border_mask, 2] = border_color[2]
+    pixels[border_mask, 3] = 255  # Fully opaque
+
+    return Image.fromarray(pixels)
+
+
+def parse_hex_color(hex_str):
+    """Parse hex color string to (r, g, b) tuple."""
+    hex_str = hex_str.lstrip('#')
+    if len(hex_str) == 6:
+        return tuple(int(hex_str[i:i+2], 16) for i in (0, 2, 4))
+    raise ValueError(f"Invalid hex color: {hex_str}")
+
+
+def apply_white_edge_border(img, threshold=240, min_percent=20, border_width=2, border_color="auto", min_coverage=5.0, n_clusters=12):
+    """
+    Check for white edges and add a dark border if needed.
+
+    Args:
+        img: PIL Image (RGBA)
+        threshold: RGB value above which edge pixels are "white"
+        min_percent: Minimum % of edge that must be white to trigger
+        border_width: Width of border in pixels
+        border_color: Hex color string (e.g. '#2d5a6b') or 'auto' for darkest color
+        min_coverage: Minimum % coverage for darkest color selection
+        n_clusters: Number of clusters for color extraction
+
+    Returns:
+        (result_image, metadata_dict)
+
+    Metadata includes:
+        - border_added: bool
+        - white_edge_percent: float
+        - border_color: hex string or None
+    """
+    has_white, white_pct, edge_count = check_white_edges(img, threshold, min_percent)
+
+    metadata = {
+        "white_edge_percent": round(white_pct, 1),
+        "edge_pixels_checked": edge_count,
+        "border_added": False,
+        "border_color": None,
+    }
+
+    if not has_white:
+        log.info("No white edges detected (%.1f%% < %d%% threshold)", white_pct, min_percent)
+        return img, metadata
+
+    # Determine border color
+    if border_color and border_color.lower() != "auto":
+        # User-specified color
+        try:
+            color_rgb = parse_hex_color(border_color)
+            log.info("Using user-specified border color: %s", border_color)
+        except ValueError as e:
+            log.warning("Invalid border_color '%s': %s, falling back to auto", border_color, e)
+            color_rgb = find_darkest_color(img, min_coverage, n_clusters)
+    else:
+        # Auto: find darkest color
+        color_rgb = find_darkest_color(img, min_coverage, n_clusters)
+
+    if color_rgb is None:
+        log.warning("Could not find suitable color for border")
+        return img, metadata
+
+    # Add the border
+    result = add_border_around_object(img, color_rgb, border_width)
+
+    metadata["border_added"] = True
+    metadata["border_color"] = rgb_to_hex(color_rgb)
+    metadata["border_width"] = border_width
+
+    log.info("Added %dpx border in %s (white edges: %.1f%%)",
+             border_width, rgb_to_hex(color_rgb), white_pct)
+
+    return result, metadata
+
+
 # ─────────────────────────── apiai.me entry ───────────────────────────
 
 def main():
@@ -450,6 +713,9 @@ def main():
         min_coverage = float(params.get("min_coverage", "5") or "5")
         min_delta_e = float(params.get("min_delta_e", "10") or "10")
         n_clusters = int(params.get("n_clusters", "12") or "12")
+        border_width = int(params.get("border_width", "2") or "2")
+        white_edge_threshold = int(params.get("white_edge_threshold", "240") or "240")
+        white_edge_percent = int(params.get("white_edge_percent", "20") or "20")
     except ValueError as e:
         write_error(f"Invalid numeric parameter: {e}")
         return
@@ -459,10 +725,17 @@ def main():
     auto_crop_reference = auto_crop_str in ("true", "1", "yes")
     crop_query = params.get("crop_query", "complete logo with text, full team logo with text, entire emblem, club logo") or "complete logo with text, full team logo with text, entire emblem, club logo"
 
+    add_edge_border_str = (params.get("add_edge_border", "false") or "false").lower()
+    add_edge_border = add_edge_border_str in ("true", "1", "yes")
+    border_color = params.get("border_color", "auto") or "auto"
+
     # Clamp to valid ranges
     min_coverage = max(1.0, min(50.0, min_coverage))
     min_delta_e = max(5.0, min(50.0, min_delta_e))
     n_clusters = max(8, min(20, n_clusters))
+    border_width = max(1, min(50, border_width))
+    white_edge_threshold = max(200, min(255, white_edge_threshold))
+    white_edge_percent = max(5, min(50, white_edge_percent))
 
     # Decode images
     try:
@@ -486,20 +759,37 @@ def main():
     log.info("Correcting colors: min_coverage=%.0f%%, min_delta_e=%.0f, clusters=%d",
              min_coverage, min_delta_e, n_clusters)
 
-    # Apply correction
+    # Apply color correction
     corrected_img, replacements = apply_color_correction(
         gen_img, ref_img, min_coverage, min_delta_e, n_clusters
     )
+
+    # Apply white edge border if enabled
+    border_metadata = {"border_added": False}
+    if add_edge_border:
+        log.info("Checking for white edges (threshold=%d, min_percent=%d%%)",
+                 white_edge_threshold, white_edge_percent)
+        corrected_img, border_metadata = apply_white_edge_border(
+            corrected_img,
+            threshold=white_edge_threshold,
+            min_percent=white_edge_percent,
+            border_width=border_width,
+            border_color=border_color,
+            min_coverage=min_coverage,
+            n_clusters=n_clusters,
+        )
 
     # Output
     buf = io.BytesIO()
     corrected_img.save(buf, format="PNG")
 
-    log.info("Color correction done: %d replacements", len(replacements))
+    log.info("Color correction done: %d replacements, border_added=%s",
+             len(replacements), border_metadata.get("border_added", False))
     write_output(
         buf.getvalue(),
         "image/png",
         colors_corrected=len(replacements),
+        **border_metadata,
     )
 
 
@@ -538,6 +828,17 @@ def run_local_cli():
     p.add_argument("--crop-query", type=str,
                    default="complete logo with text, full team logo with text, entire emblem, club logo",
                    help="Detection query for auto-crop")
+    # White edge border params
+    p.add_argument("--add-edge-border", action="store_true", default=False,
+                   help="Add dark border around white edges (default: false)")
+    p.add_argument("--border-width", type=int, default=2,
+                   help="Border width in pixels (default 2)")
+    p.add_argument("--border-color", type=str, default="auto",
+                   help="Border color as hex (e.g. '#2d5a6b') or 'auto' (default: auto)")
+    p.add_argument("--white-edge-threshold", type=int, default=240,
+                   help="RGB threshold for white detection (default 240)")
+    p.add_argument("--white-edge-percent", type=int, default=20,
+                   help="Min %% of edge that must be white (default 20)")
     args = p.parse_args()
 
     # Load images
@@ -548,6 +849,9 @@ def run_local_cli():
     min_coverage = max(1.0, min(50.0, args.min_coverage))
     min_delta_e = max(5.0, min(50.0, args.min_delta_e))
     n_clusters = max(8, min(20, args.n_clusters))
+    border_width = max(1, min(50, args.border_width))
+    white_edge_threshold = max(200, min(255, args.white_edge_threshold))
+    white_edge_percent = max(5, min(50, args.white_edge_percent))
 
     log.info("Input: %s (%dx%d)", args.input, *gen_img.size)
     log.info("Reference: %s (%dx%d)", args.reference, *ref_img.size)
@@ -561,10 +865,25 @@ def run_local_cli():
     log.info("Params: min_coverage=%.0f%%, min_delta_e=%.0f, clusters=%d",
              min_coverage, min_delta_e, n_clusters)
 
-    # Apply correction
+    # Apply color correction
     corrected_img, replacements = apply_color_correction(
         gen_img, ref_img, min_coverage, min_delta_e, n_clusters
     )
+
+    # Apply white edge border if enabled
+    border_metadata = {"border_added": False}
+    if args.add_edge_border:
+        log.info("Checking for white edges (threshold=%d, min_percent=%d%%)",
+                 white_edge_threshold, white_edge_percent)
+        corrected_img, border_metadata = apply_white_edge_border(
+            corrected_img,
+            threshold=white_edge_threshold,
+            min_percent=white_edge_percent,
+            border_width=border_width,
+            border_color=args.border_color,
+            min_coverage=min_coverage,
+            n_clusters=n_clusters,
+        )
 
     # Save
     corrected_img.save(args.output)
@@ -576,6 +895,12 @@ def run_local_cli():
                   f"(ΔE {delta:.1f}, {pct:.0f}%, {px:,} px)")
     else:
         print("\nNo color corrections needed.")
+
+    if border_metadata.get("border_added"):
+        print(f"\nAdded {border_metadata['border_width']}px border in {border_metadata['border_color']}")
+        print(f"  White edge coverage: {border_metadata['white_edge_percent']}%")
+    elif args.add_edge_border:
+        print(f"\nNo white edges detected ({border_metadata.get('white_edge_percent', 0):.1f}%)")
 
     log.info("Wrote %s", args.output)
 
