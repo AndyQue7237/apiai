@@ -20,8 +20,11 @@ The algorithm:
 4. If ΔE > min_delta_e, replace that color with the reference color
 5. Use smart tolerance (ΔE/2, max 15) to avoid replacing similar-but-different colors
 
-Black and white are excluded from correction — they rarely drift and
-false-matching them would damage intentional use of these colors.
+Excluded from correction:
+- Black and white (rarely drift, false-matching damages intentional use)
+- Near-white highlights (high brightness + low saturation = shading artifacts)
+
+Optional: Add border around white edges (add_edge_border parameter).
 """
 
 import base64
@@ -58,7 +61,7 @@ MIN_REPLACEMENT_TOLERANCE = 5     # Minimum ΔE tolerance for color replacement
 MAX_REPLACEMENT_TOLERANCE = 15    # Maximum ΔE tolerance (cap for safety)
 
 # Downsampling for clustering (color distribution preserved at small sizes)
-MAX_CLUSTER_DIM = 400  # Increased from 200 for better color detection
+MAX_CLUSTER_DIM = 400
 
 # K-means stability (simulate sklearn's n_init)
 KMEANS_N_INIT = 10  # Run clustering multiple times, pick best (matches sklearn default)
@@ -178,8 +181,12 @@ def auto_crop_image(img, query):
         log.warning("Florence-2 API error: %s, using original image", e)
         return img
 
-    # Parse output
-    text_output = output.get("text", "")
+    # Parse output - handle both dict and generator/list outputs
+    if isinstance(output, dict):
+        text_output = output.get("text", "")
+    else:
+        # Some model versions return a generator/list
+        text_output = str(output)
     try:
         import ast
         parsed = ast.literal_eval(text_output) if isinstance(text_output, str) else text_output
@@ -257,19 +264,20 @@ def is_black_or_white_or_highlight(rgb):
 
     These are excluded because:
     - Black/white rarely drift in AI generation
-    - Near-white highlights are shading artifacts, not brand colors
+    - Near-white highlights (high brightness + low saturation) are shading artifacts
     - Matching them can cause false positives
     """
     r, g, b = rgb[:3]
     avg = (r + g + b) / 3
+    saturation = max(r, g, b) - min(r, g, b)
 
-    # Check for near-white highlights (even with some color variation)
-    # These are shading/highlight colors that shouldn't be corrected
-    if avg > NEAR_WHITE_THRESHOLD:
+    # Check for near-white highlights: high brightness AND low saturation
+    # This avoids excluding bright saturated colors (e.g. bright yellow)
+    if avg > NEAR_WHITE_THRESHOLD and saturation < BW_GRAYSCALE_TOLERANCE:
         return "highlight"
 
     # Check if grayscale (R ≈ G ≈ B)
-    if max(r, g, b) - min(r, g, b) > BW_GRAYSCALE_TOLERANCE:
+    if saturation > BW_GRAYSCALE_TOLERANCE:
         return None  # Has color, not grayscale
 
     if avg < BW_BRIGHTNESS_THRESHOLD:
@@ -360,7 +368,7 @@ def find_best_match(color, candidates):
     return best_match, best_delta
 
 
-def replace_color_smart(img, old_color, new_color, max_delta):
+def replace_color_smart(img, old_color, new_color, max_delta, precomputed_lab=None):
     """
     Replace old_color with new_color in image, using smart tolerance.
 
@@ -368,10 +376,16 @@ def replace_color_smart(img, old_color, new_color, max_delta):
     Only replaces pixels where: ΔE(pixel, old_color) < tolerance
     Tolerance is min(MAX_REPLACEMENT_TOLERANCE, max(MIN_REPLACEMENT_TOLERANCE, max_delta/2))
 
-    Returns: (corrected_image, number_of_pixels_replaced)
+    Args:
+        img: PIL Image (RGBA)
+        old_color: RGB tuple to replace
+        new_color: RGB tuple to replace with
+        max_delta: Maximum ΔE for tolerance calculation
+        precomputed_lab: Optional pre-computed Lab array to avoid recomputation
+
+    Returns: (corrected_image, number_of_pixels_replaced, lab_array)
     """
     pixels = np.array(img, dtype=np.float32)
-    h, w = pixels.shape[:2]
 
     # Tolerance: half the drift distance, clamped to safe range
     tolerance = min(MAX_REPLACEMENT_TOLERANCE, max(MIN_REPLACEMENT_TOLERANCE, max_delta / 2))
@@ -379,10 +393,12 @@ def replace_color_smart(img, old_color, new_color, max_delta):
     # Create mask for opaque pixels
     opaque_mask = pixels[:, :, 3] >= 128
 
-    # Convert RGB to Lab for all pixels (vectorized)
-    # skimage expects (H, W, 3) in range 0-1
-    rgb_normalized = pixels[:, :, :3] / 255.0
-    all_lab = rgb2lab(rgb_normalized)
+    # Use pre-computed Lab or compute once
+    if precomputed_lab is not None:
+        all_lab = precomputed_lab
+    else:
+        rgb_normalized = pixels[:, :, :3] / 255.0
+        all_lab = rgb2lab(rgb_normalized)
 
     # Convert old_color to Lab
     old_rgb = np.array([[old_color[:3]]], dtype=np.float32) / 255.0
@@ -399,7 +415,7 @@ def replace_color_smart(img, old_color, new_color, max_delta):
     pixels[replace_mask, :3] = new_rgb
 
     replaced = int(np.sum(replace_mask))
-    return Image.fromarray(pixels.astype(np.uint8)), replaced
+    return Image.fromarray(pixels.astype(np.uint8)), replaced, all_lab
 
 
 def apply_color_correction(gen_img, ref_img, min_coverage, min_delta_e, n_clusters):
@@ -446,9 +462,14 @@ def apply_color_correction(gen_img, ref_img, min_coverage, min_delta_e, n_cluste
     if img.mode != "RGBA":
         img = img.convert("RGBA")
 
+    # Pre-compute Lab once for all corrections
+    precomputed_lab = None
+
     actual_replacements = []
     for old_color, new_color, delta, pct in corrections_needed:
-        img, pixel_count = replace_color_smart(img, old_color, new_color, delta)
+        img, pixel_count, precomputed_lab = replace_color_smart(
+            img, old_color, new_color, delta, precomputed_lab
+        )
         if pixel_count > 0:
             actual_replacements.append((old_color, new_color, delta, pct, pixel_count))
             log.info("Replaced %s -> %s (ΔE %.1f, %.0f%%, %d px)",
@@ -460,18 +481,18 @@ def apply_color_correction(gen_img, ref_img, min_coverage, min_delta_e, n_cluste
 
 # ───────────────────────── white edge border ─────────────────────────
 
-def find_edge_pixels(img):
+def find_edge_pixels(pixels_array):
     """
     Find pixels at the edge of the object (where alpha > 0 borders alpha = 0).
 
-    Returns array of (x, y) coordinates for edge pixels.
+    Args:
+        pixels_array: numpy array of RGBA image (H, W, 4)
+
+    Returns array of (y, x) coordinates for edge pixels.
     """
     from scipy import ndimage
 
-    if img.mode != "RGBA":
-        img = img.convert("RGBA")
-
-    alpha = np.array(img)[:, :, 3]
+    alpha = pixels_array[:, :, 3]
     opaque = alpha > 128
 
     # Erode the opaque mask by 1 pixel
@@ -501,18 +522,15 @@ def check_white_edges(img, threshold=240, min_percent=20):
         img = img.convert("RGBA")
 
     pixels = np.array(img)
-    edge_coords = find_edge_pixels(img)
+    edge_coords = find_edge_pixels(pixels)
 
     if len(edge_coords) == 0:
         return False, 0.0, 0
 
-    # Sample edge pixel colors
-    white_count = 0
-    for y, x in edge_coords:
-        r, g, b = pixels[y, x, :3]
-        # All channels must be above threshold to be "white"
-        if r >= threshold and g >= threshold and b >= threshold:
-            white_count += 1
+    # Vectorized: extract all edge pixel RGB values at once
+    edge_pixels = pixels[edge_coords[:, 0], edge_coords[:, 1], :3]
+    # All channels must be >= threshold to be "white"
+    white_count = int(np.all(edge_pixels >= threshold, axis=1).sum())
 
     white_pct = (white_count / len(edge_coords)) * 100
     has_white = white_pct >= min_percent
