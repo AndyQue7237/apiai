@@ -15,10 +15,11 @@ Pipeline position:
 
 The algorithm:
 1. Extract dominant colors from both images (k-means clustering)
-2. For each color in generated image that covers >min_coverage% of pixels
-3. Find the closest color in the reference image (by ΔE in CIELAB)
-4. If ΔE > min_delta_e, replace that color with the reference color
-5. Use smart tolerance (ΔE/2, max 15) to avoid replacing similar-but-different colors
+2. Merge clusters that are perceptually identical (ΔE < merge_threshold)
+3. For each color in generated image that covers >min_coverage% of pixels
+4. Find the closest color in the reference image (by ΔE in CIELAB)
+5. If ΔE > min_delta_e, replace that color with the reference color
+6. Use cluster-based replacement (not tolerance) to avoid bleeding into other colors
 
 Excluded from correction:
 - Black and white (rarely drift, false-matching damages intentional use)
@@ -56,9 +57,8 @@ BW_GRAYSCALE_TOLERANCE = 30       # Max R/G/B spread to be considered grayscale 
 # Near-white/highlight exclusion (colors too light to be brand colors)
 NEAR_WHITE_THRESHOLD = 220        # Average RGB above this is likely a highlight, exclude
 
-# Smart replacement tolerance
-MIN_REPLACEMENT_TOLERANCE = 5     # Minimum ΔE tolerance for color replacement
-MAX_REPLACEMENT_TOLERANCE = 15    # Maximum ΔE tolerance (cap for safety)
+# Cluster merging threshold (perceptually identical colors)
+DEFAULT_CLUSTER_MERGE_THRESHOLD = 8.0  # Merge clusters with ΔE < this
 
 # Downsampling for clustering (color distribution preserved at small sizes)
 MAX_CLUSTER_DIM = 400
@@ -101,6 +101,12 @@ PARAM_DEFS = [
         "type": "int",
         "description": "Number of color clusters for analysis. Higher values detect more color variations but increase processing time. Range 8-20. Default 12.",
         "default_value": "12",
+    },
+    {
+        "name": "cluster_merge_threshold",
+        "type": "float",
+        "description": "Merge clusters with color difference (ΔE) below this threshold. Prevents splitting identical colors into multiple clusters. Range 5-15. Default 8.",
+        "default_value": "8",
     },
     {
         "name": "auto_crop_reference",
@@ -339,6 +345,207 @@ def extract_colors(img, n_colors=12, exclude_bw=True):
     return results
 
 
+def extract_colors_with_labels(img, n_colors=12):
+    """
+    Extract dominant colors AND cluster labels for each pixel.
+
+    Unlike extract_colors(), this returns labels for the full-resolution image,
+    enabling cluster-based replacement instead of tolerance-based.
+
+    Returns:
+        colors: list of (color_rgb, percentage, cluster_id, bw_type) tuples
+        labels: 2D array of cluster IDs for each pixel (-1 for transparent)
+        centroids: cluster centers as numpy array
+    """
+    if img.mode != "RGBA":
+        img = img.convert("RGBA")
+
+    orig_pixels = np.array(img)
+    h, w = orig_pixels.shape[:2]
+
+    # Downsample for clustering
+    scale = min(1.0, MAX_CLUSTER_DIM / max(w, h))
+    if scale < 1.0:
+        new_size = (int(w * scale), int(h * scale))
+        img_small = img.resize(new_size, Image.LANCZOS)
+    else:
+        img_small = img
+
+    pixels_small = np.array(img_small).reshape(-1, 4)
+    opaque_mask_small = pixels_small[:, 3] > 128
+    opaque_small = pixels_small[opaque_mask_small][:, :3].astype(np.float32)
+
+    if len(opaque_small) < n_colors:
+        return [], None, None
+
+    # Run k-means multiple times for stability
+    best_centroids, best_labels, best_distortion = None, None, float('inf')
+    for i in range(KMEANS_N_INIT):
+        try:
+            centroids, labels = kmeans2(opaque_small, n_colors, minit='points', seed=42 + i)
+            distortion = np.sum((opaque_small - centroids[labels]) ** 2)
+            if distortion < best_distortion:
+                best_centroids, best_labels, best_distortion = centroids, labels, distortion
+        except Exception:
+            continue
+
+    if best_centroids is None:
+        return [], None, None
+
+    # Assign labels to FULL resolution image (vectorized)
+    pixels_full = orig_pixels.reshape(-1, 4)
+    opaque_mask_full = pixels_full[:, 3] > 128
+    opaque_full = pixels_full[opaque_mask_full][:, :3].astype(np.float32)
+
+    # Vectorized: compute distances to all centroids
+    diff = opaque_full[:, np.newaxis, :] - best_centroids[np.newaxis, :, :]
+    distances = np.sum(diff ** 2, axis=2)
+    labels_full_opaque = np.argmin(distances, axis=1)
+
+    # Create full labels array (-1 for transparent)
+    labels_full = np.full(len(pixels_full), -1, dtype=int)
+    labels_full[opaque_mask_full] = labels_full_opaque
+    labels_full = labels_full.reshape(h, w)
+
+    # Calculate coverage and build results
+    counts = np.bincount(labels_full_opaque, minlength=n_colors)
+    total = len(labels_full_opaque)
+
+    results = []
+    for idx in np.argsort(-counts):
+        color = tuple(np.clip(best_centroids[idx].astype(int), 0, 255))
+        pct = counts[idx] / total * 100
+        bw_type = is_black_or_white_or_highlight(color)
+        results.append((color, pct, idx, bw_type))
+
+    return results, labels_full, best_centroids
+
+
+def merge_similar_clusters(colors, labels, centroids, threshold=DEFAULT_CLUSTER_MERGE_THRESHOLD):
+    """
+    Merge clusters that are perceptually identical (ΔE < threshold).
+
+    This prevents k-means from splitting the same color into multiple clusters,
+    which can happen when n_clusters is higher than the actual number of colors.
+
+    Returns:
+        merged_colors: list of (color_rgb, percentage, cluster_id, bw_type)
+        merged_labels: updated labels array
+        merged_centroids: updated centroids
+        merge_map: dict mapping old cluster IDs to new cluster IDs
+    """
+    n_clusters = len(centroids)
+
+    # Convert centroids to Lab for ΔE calculation
+    centroids_lab = []
+    for c in centroids:
+        rgb_norm = np.array([[c[:3]]], dtype=np.float32) / 255.0
+        centroids_lab.append(rgb2lab(rgb_norm)[0, 0])
+    centroids_lab = np.array(centroids_lab)
+
+    # Build coverage map from colors list
+    coverage = np.zeros(n_clusters)
+    for _, pct, idx, _ in colors:
+        coverage[idx] = pct
+
+    # Union-find for merging
+    parent = list(range(n_clusters))
+
+    def find(x):
+        if parent[x] != x:
+            parent[x] = find(parent[x])
+        return parent[x]
+
+    def union(x, y):
+        px, py = find(x), find(y)
+        if px != py:
+            # Merge smaller into larger (by coverage)
+            if coverage[px] >= coverage[py]:
+                parent[py] = px
+            else:
+                parent[px] = py
+
+    # Find pairs to merge
+    for i in range(n_clusters):
+        for j in range(i + 1, n_clusters):
+            de = np.sqrt(np.sum((centroids_lab[i] - centroids_lab[j]) ** 2))
+            if de < threshold:
+                log.debug("Merging cluster %d + %d (ΔE=%.1f)", i, j, de)
+                union(i, j)
+
+    # Build merge map
+    merge_map = {}
+    new_cluster_id = 0
+    root_to_new = {}
+
+    for i in range(n_clusters):
+        root = find(i)
+        if root not in root_to_new:
+            root_to_new[root] = new_cluster_id
+            new_cluster_id += 1
+        merge_map[i] = root_to_new[root]
+
+    n_merged = new_cluster_id
+    log.info("Merged %d clusters → %d clusters", n_clusters, n_merged)
+
+    # Calculate new centroids (weighted average by coverage)
+    new_centroids = np.zeros((n_merged, 3), dtype=np.float32)
+    new_coverage = np.zeros(n_merged, dtype=np.float32)
+
+    for old_id in range(n_clusters):
+        new_id = merge_map[old_id]
+        weight = coverage[old_id]
+        new_centroids[new_id] += centroids[old_id] * weight
+        new_coverage[new_id] += weight
+
+    # Normalize centroids
+    for new_id in range(n_merged):
+        if new_coverage[new_id] > 0:
+            new_centroids[new_id] /= new_coverage[new_id]
+
+    # Update labels
+    new_labels = labels.copy()
+    for old_id, new_id in merge_map.items():
+        new_labels[labels == old_id] = new_id
+
+    # Build new colors list
+    new_colors = []
+    for new_id in range(n_merged):
+        color = tuple(np.clip(new_centroids[new_id].astype(int), 0, 255))
+        pct = new_coverage[new_id]
+        bw_type = is_black_or_white_or_highlight(color)
+        new_colors.append((color, pct, new_id, bw_type))
+
+    # Sort by coverage
+    new_colors.sort(key=lambda x: -x[1])
+
+    return new_colors, new_labels, new_centroids, merge_map
+
+
+def replace_by_cluster(img, labels, cluster_id, new_color):
+    """
+    Replace all pixels belonging to a cluster with a new color.
+
+    This is more precise than tolerance-based replacement because it only
+    affects pixels that were assigned to the cluster during k-means,
+    preventing "bleeding" into neighboring colors.
+
+    Returns:
+        (corrected_image, number_of_pixels_replaced)
+    """
+    pixels = np.array(img, dtype=np.float32)
+
+    # Mask: pixels belonging to this cluster
+    replace_mask = (labels == cluster_id)
+
+    # Apply replacement
+    new_rgb = np.array(new_color[:3], dtype=np.float32)
+    pixels[replace_mask, :3] = new_rgb
+
+    replaced = int(np.sum(replace_mask))
+    return Image.fromarray(pixels.astype(np.uint8)), replaced
+
+
 def find_best_match(color, candidates):
     """
     Find the best matching color from candidates based on ΔE.
@@ -368,59 +575,13 @@ def find_best_match(color, candidates):
     return best_match, best_delta
 
 
-def replace_color_smart(img, old_color, new_color, max_delta, precomputed_lab=None):
-    """
-    Replace old_color with new_color in image, using smart tolerance.
-
-    Vectorized implementation using skimage.color.rgb2lab for speed.
-    Only replaces pixels where: ΔE(pixel, old_color) < tolerance
-    Tolerance is min(MAX_REPLACEMENT_TOLERANCE, max(MIN_REPLACEMENT_TOLERANCE, max_delta/2))
-
-    Args:
-        img: PIL Image (RGBA)
-        old_color: RGB tuple to replace
-        new_color: RGB tuple to replace with
-        max_delta: Maximum ΔE for tolerance calculation
-        precomputed_lab: Optional pre-computed Lab array to avoid recomputation
-
-    Returns: (corrected_image, number_of_pixels_replaced, lab_array)
-    """
-    pixels = np.array(img, dtype=np.float32)
-
-    # Tolerance: half the drift distance, clamped to safe range
-    tolerance = min(MAX_REPLACEMENT_TOLERANCE, max(MIN_REPLACEMENT_TOLERANCE, max_delta / 2))
-
-    # Create mask for opaque pixels
-    opaque_mask = pixels[:, :, 3] >= 128
-
-    # Use pre-computed Lab or compute once
-    if precomputed_lab is not None:
-        all_lab = precomputed_lab
-    else:
-        rgb_normalized = pixels[:, :, :3] / 255.0
-        all_lab = rgb2lab(rgb_normalized)
-
-    # Convert old_color to Lab
-    old_rgb = np.array([[old_color[:3]]], dtype=np.float32) / 255.0
-    old_lab = rgb2lab(old_rgb)[0, 0]
-
-    # Calculate ΔE for all pixels (vectorized)
-    delta_e = np.sqrt(np.sum((all_lab - old_lab) ** 2, axis=2))
-
-    # Create replacement mask: opaque AND within tolerance
-    replace_mask = opaque_mask & (delta_e < tolerance)
-
-    # Apply replacement
-    new_rgb = np.array(new_color[:3], dtype=np.float32)
-    pixels[replace_mask, :3] = new_rgb
-
-    replaced = int(np.sum(replace_mask))
-    return Image.fromarray(pixels.astype(np.uint8)), replaced, all_lab
-
-
-def apply_color_correction(gen_img, ref_img, min_coverage, min_delta_e, n_clusters):
+def apply_color_correction(gen_img, ref_img, min_coverage, min_delta_e, n_clusters,
+                           cluster_merge_threshold=DEFAULT_CLUSTER_MERGE_THRESHOLD):
     """
     Apply color correction from reference image to generated image.
+
+    Uses cluster-based replacement (not tolerance-based) to avoid bleeding
+    into neighboring colors. Similar clusters are merged before analysis.
 
     Args:
         gen_img: PIL Image (generated/AI output to correct)
@@ -428,53 +589,65 @@ def apply_color_correction(gen_img, ref_img, min_coverage, min_delta_e, n_cluste
         min_coverage: Minimum % of image for a color to be corrected
         min_delta_e: Minimum ΔE to trigger correction
         n_clusters: Number of k-means clusters for color extraction
+        cluster_merge_threshold: Merge clusters with ΔE below this (default 8)
 
     Returns:
         (corrected_image, list_of_replacements)
 
     Each replacement is: (old_color, new_color, delta_e, coverage_pct, pixel_count)
     """
-    gen_colors = extract_colors(gen_img, n_colors=n_clusters)
+    # Extract colors with labels for cluster-based replacement
+    gen_colors, gen_labels, gen_centroids = extract_colors_with_labels(gen_img, n_colors=n_clusters)
+
+    if not gen_colors or gen_labels is None:
+        log.warning("Could not extract colors from generated image")
+        return gen_img, []
+
+    # Merge similar clusters in generated image
+    gen_colors, gen_labels, gen_centroids, _ = merge_similar_clusters(
+        gen_colors, gen_labels, gen_centroids, threshold=cluster_merge_threshold
+    )
+
+    # Extract reference colors (no labels needed, just for matching)
     ref_colors = extract_colors(ref_img, n_colors=n_clusters)
 
-    if not gen_colors or not ref_colors:
-        log.warning("Could not extract colors from one or both images")
+    if not ref_colors:
+        log.warning("Could not extract colors from reference image")
         return gen_img, []
 
     # Find colors that need correction
     corrections_needed = []
-    for gen_color, gen_pct in gen_colors:
+    for gen_color, gen_pct, cluster_id, bw_type in gen_colors:
+        # Skip black/white/highlights
+        if bw_type:
+            continue
         if gen_pct < min_coverage:
             continue
+
         match, delta = find_best_match(gen_color, ref_colors)
         # Skip if no valid match found (delta > MAX_MATCH_DELTA_E)
         if match is None:
             continue
         if delta > min_delta_e:
-            corrections_needed.append((gen_color, match, delta, gen_pct))
+            corrections_needed.append((gen_color, match, delta, gen_pct, cluster_id))
 
     if not corrections_needed:
         log.info("No color corrections needed")
         return gen_img, []
 
-    # Apply corrections
+    # Apply corrections using cluster-based replacement
     img = gen_img.copy()
     if img.mode != "RGBA":
         img = img.convert("RGBA")
 
-    # Pre-compute Lab once for all corrections
-    precomputed_lab = None
-
     actual_replacements = []
-    for old_color, new_color, delta, pct in corrections_needed:
-        img, pixel_count, precomputed_lab = replace_color_smart(
-            img, old_color, new_color, delta, precomputed_lab
-        )
+    for old_color, new_color, delta, pct, cluster_id in corrections_needed:
+        img, pixel_count = replace_by_cluster(img, gen_labels, cluster_id, new_color)
         if pixel_count > 0:
             actual_replacements.append((old_color, new_color, delta, pct, pixel_count))
-            log.info("Replaced %s -> %s (ΔE %.1f, %.0f%%, %d px)",
+            log.info("Replaced %s -> %s (ΔE %.1f, %.1f%%, %d px, cluster %d)",
                      rgb_to_hex(old_color), rgb_to_hex(new_color),
-                     delta, pct, pixel_count)
+                     delta, pct, pixel_count, cluster_id)
 
     return img, actual_replacements
 
@@ -731,6 +904,7 @@ def main():
         min_coverage = float(params.get("min_coverage", "5") or "5")
         min_delta_e = float(params.get("min_delta_e", "10") or "10")
         n_clusters = int(params.get("n_clusters", "12") or "12")
+        cluster_merge_threshold = float(params.get("cluster_merge_threshold", "8") or "8")
         border_width = int(params.get("border_width", "2") or "2")
         white_edge_threshold = int(params.get("white_edge_threshold", "240") or "240")
         white_edge_percent = int(params.get("white_edge_percent", "20") or "20")
@@ -751,6 +925,7 @@ def main():
     min_coverage = max(1.0, min(50.0, min_coverage))
     min_delta_e = max(5.0, min(50.0, min_delta_e))
     n_clusters = max(8, min(20, n_clusters))
+    cluster_merge_threshold = max(5.0, min(15.0, cluster_merge_threshold))
     border_width = max(1, min(50, border_width))
     white_edge_threshold = max(200, min(255, white_edge_threshold))
     white_edge_percent = max(5, min(50, white_edge_percent))
@@ -774,12 +949,12 @@ def main():
         log.info("Auto-cropping reference with query: %s", crop_query)
         ref_img = auto_crop_image(ref_img, crop_query)
 
-    log.info("Correcting colors: min_coverage=%.0f%%, min_delta_e=%.0f, clusters=%d",
-             min_coverage, min_delta_e, n_clusters)
+    log.info("Correcting colors: min_coverage=%.0f%%, min_delta_e=%.0f, clusters=%d, merge_threshold=%.0f",
+             min_coverage, min_delta_e, n_clusters, cluster_merge_threshold)
 
     # Apply color correction
     corrected_img, replacements = apply_color_correction(
-        gen_img, ref_img, min_coverage, min_delta_e, n_clusters
+        gen_img, ref_img, min_coverage, min_delta_e, n_clusters, cluster_merge_threshold
     )
 
     # Apply white edge border if enabled
@@ -839,6 +1014,8 @@ def run_local_cli():
                    help="Min ΔE to trigger correction (default 10)")
     p.add_argument("--n-clusters", type=int, default=12,
                    help="Number of color clusters (default 12)")
+    p.add_argument("--cluster-merge-threshold", type=float, default=8.0,
+                   help="Merge clusters with ΔE below this (default 8)")
     p.add_argument("--auto-crop", action="store_true", default=True,
                    help="Auto-crop reference using Florence-2 (default: true)")
     p.add_argument("--no-auto-crop", dest="auto_crop", action="store_false",
@@ -867,6 +1044,7 @@ def run_local_cli():
     min_coverage = max(1.0, min(50.0, args.min_coverage))
     min_delta_e = max(5.0, min(50.0, args.min_delta_e))
     n_clusters = max(8, min(20, args.n_clusters))
+    cluster_merge_threshold = max(5.0, min(15.0, args.cluster_merge_threshold))
     border_width = max(1, min(50, args.border_width))
     white_edge_threshold = max(200, min(255, args.white_edge_threshold))
     white_edge_percent = max(5, min(50, args.white_edge_percent))
@@ -880,12 +1058,12 @@ def run_local_cli():
         ref_img = auto_crop_image(ref_img, args.crop_query)
         log.info("Reference after crop: %dx%d", *ref_img.size)
 
-    log.info("Params: min_coverage=%.0f%%, min_delta_e=%.0f, clusters=%d",
-             min_coverage, min_delta_e, n_clusters)
+    log.info("Params: min_coverage=%.0f%%, min_delta_e=%.0f, clusters=%d, merge_threshold=%.0f",
+             min_coverage, min_delta_e, n_clusters, cluster_merge_threshold)
 
     # Apply color correction
     corrected_img, replacements = apply_color_correction(
-        gen_img, ref_img, min_coverage, min_delta_e, n_clusters
+        gen_img, ref_img, min_coverage, min_delta_e, n_clusters, cluster_merge_threshold
     )
 
     # Apply white edge border if enabled
