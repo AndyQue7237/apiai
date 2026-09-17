@@ -307,3 +307,48 @@ model interprets prompts unpredictably across diverse inputs. Instead:
 This keeps the generative step simple and predictable, while handling edge cases reliably.
 Example: `correct_colors.py` detects white edges and adds a border only when needed, rather
 than asking GPT-2 to "always add a border" (which would affect logos that don't need one).
+
+## 12. Performance learnings
+
+Hard-won lessons from production scripts. These patterns recur.
+
+### PIL format attribute is fragile
+
+`img.format` (e.g., "JPEG", "PNG") is **cleared by any PIL transformation** — including
+`ImageOps.exif_transpose()`, `img.convert()`, and `img.resize()`. If you need the original
+format, capture it **immediately after opening**, before any transform:
+
+```python
+img = Image.open(io.BytesIO(input_bytes))
+original_format = img.format  # ← capture NOW, before any transform
+img = ImageOps.exif_transpose(img)  # clears img.format
+```
+
+### Guard dimension loops
+
+When iteratively shrinking images (e.g., to fit pixel limits), always guard against both
+dimensions going to zero:
+
+```python
+# ✅ correct — guards both dimensions
+while new_width * new_height > max_pixels and new_width > 1 and new_height > 1:
+    new_width -= 1
+    new_height = max(1, int(new_width * height / width))
+
+# ❌ wrong — can loop forever if new_height hits 0 first
+while new_width * new_height > max_pixels and new_width > 1:
+    ...
+```
+
+### Metadata values should be JSON-serializable
+
+When passing metadata through `write_output(**metadata)`, ensure values serialize cleanly.
+Lists may serialize oddly depending on downstream consumers — prefer joined strings:
+
+```python
+# ✅ cleaner for downstream
+metadata["resized_for"] = "pixels, bytes"
+
+# ⚠️ may cause issues
+metadata["resized_for"] = ["pixels", "bytes"]
+```
