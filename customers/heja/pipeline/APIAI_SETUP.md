@@ -121,10 +121,11 @@ Remove background outside the team emblem. Important keep the logo identical wit
 | `min_coverage` | `5` |
 | `min_delta_e` | `10` |
 | `n_clusters` | `12` |
+| `cluster_merge_threshold` | `8` |
 | `auto_crop_reference` | `true` |
 | `crop_query` | `"complete logo with text, full team logo with text, entire emblem, club logo"` |
 | `add_edge_border` | `true` |
-| `border_width` | `10` |
+| `border_width` | `20` |
 | `border_color` | `auto` |
 | `white_edge_threshold` | `240` |
 | `white_edge_percent` | `20` |
