@@ -7,6 +7,11 @@ patterns) see **`README.md`** — this file is the *what-good-looks-like*, not t
 **Reference implementation:** `scripts/nb_pro_inpaint.py` — live, proven, written to these
 rules. Model new scripts on it.
 
+> **⚠️ Creating scripts during pipeline work?** Even when fixing a pipeline bug or adding
+> a quick utility, follow these guidelines fully. Don't skip the node-eval flow (§10) just
+> because you're in "pipeline mode". Every new script needs: proper description, package
+> list, local test, and Claude review before deploy.
+
 ---
 
 ## 1. Generic & reusable — no customer or use-case specifics
