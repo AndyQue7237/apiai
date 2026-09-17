@@ -1,86 +1,86 @@
 # Session Memory — apiai
 
-Senast uppdaterad: 2026-09-16
+Senast uppdaterad: 2026-09-17
 
 ## Aktuellt fokus
 
-**correct_colors.py — white edge border feature KLAR**
+**Pipeline eval + GPU-fix + nya resize-scripts**
 
-Ny funktion som lägger till mörk border runt loggor med vita kanter (t.ex. Leopards).
+Pipeline eval visade 7/10 pass, 3 failures:
+- Kumla/Tyresö: GPU OOM (>2.1MP)
+- team_usa: "Corner colors don't match"
 
-### Nya parametrar
-
-| Parameter | Default | Beskrivning |
-|-----------|---------|-------------|
-| `add_edge_border` | false | Aktivera white edge border |
-| `border_width` | 2 | Tjocklek i px (1-50) |
-| `border_color` | auto | Hex eller 'auto' (mörkaste färgen >5% coverage) |
-| `white_edge_threshold` | 240 | RGB-gräns för vit |
-| `white_edge_percent` | 20 | % av kant som måste vara vit |
-
-### Algoritm
-
-1. Hitta objektkanten (alpha > 0 gränsar mot alpha = 0)
-2. Kolla om >X% av kantpixlarna är vita
-3. Om ja: hitta mörkaste färgen med >5% coverage
-4. Dilatera alpha-masken och fyll med mörk färg
-5. Auto-padda bilden om loggan är för nära kanten
-
-### Testat
-
-- Leopards (vita kanter 36.2%) → border läggs till ✅
-- Cantagalo (inga vita kanter 0%) → ingen border ✅
+Fixar klara, väntar på deploy till apiai.me.
 
 ---
 
-## Pipeline-dokumentation uppdaterad
-
-### Condition nodes är separata steg
-
-apiai.me pipelines är linjära. Condition-noder räknas som egna steg:
-- Skip next X
-- When field Y
-- Is value Z (true/false)
-
-Pipeline gick från 14 → 19 noder med 5 condition-noder.
-
-### Uppdaterade filer
-
-- `PIPELINE_GUIDELINES.md` — ny sektion om condition nodes
-- `customers/heja/pipeline/APIAI_SETUP.md` — 19-nods struktur
-- `customers/heja/pipeline/WINNER.md` — uppdaterad konfiguration
-
----
-
-## Sessionen (2026-09-16)
+## Sessionen (2026-09-17)
 
 ### Vad vi gjorde
 
-1. **White edge border** — ny funktion i correct_colors.py
-2. **Review-fixes** — apiai.me Claude review implementerad:
-   - Vektoriserad check_white_edges
-   - Pre-computed Lab conversion
-   - replicate.run() output handling
-   - Highlight detection (kräver hög ljusstyrka + låg mättnad)
-3. **Pipeline docs** — condition nodes dokumenterade
-4. **Scripts synkade** — check_transparency, remove_solid_background
+1. **Pipeline eval** — skapade eval_pipeline.py, körde 10 loggor
+2. **team_usa fix** — lade till `passthrough_on_mismatch` i remove_solid_background.py
+3. **GPU-fix** — skapade downscale_image.py (max_pixels=2000000 före upscaler)
+4. **resize_image.py** — återbyggde scriptet (width/height/fit modes)
+5. **Metoduppdatering** — lade till regler om SCRIPT_GUIDELINES i pipeline-arbete
+
+### Nya scripts
+
+| Script | Syfte |
+|--------|-------|
+| `downscale_image.py` | Skala ned för GPU-gränser (max_pixels) eller filstorlek (max_bytes) |
+| `resize_image.py` | Resize till specifika dimensioner (contain/cover/stretch) |
 
 ### Commits
 
-- `30d1f2b` Add white edge border feature to correct_colors.py
-- `c861c8a` Fix correct_colors.py based on apiai.me review
-- `3ed3ab3` Rename is_transparent -> has_transparency
-- `fe5b09e` Update remove_solid_background.py to match apiai.me
-- `fb34c2c` Update pipeline docs: condition nodes are separate steps
+- `e0311b7` Fix correct_colors.py based on apiai.me review
+- `02c5564` Rename constrain_image to downscale_image (clearer name)
+- Flera commits för passthrough_on_mismatch, metoddokumentation
 
 ---
 
 ## Nästa session
 
-1. **Ladda upp correct_colors.py** till apiai.me (ny version med border feature)
-2. **Testa på apiai.me** — kör review igen, verifiera fixes
-3. **Uppdatera pipeline** — lägg till add_edge_border=true i nod 5
-4. **Bestäm border_width** — 10px verkar bra på 4899px bilder
+1. **Ladda upp scripts** till apiai.me:
+   - `downscale_image.py` — packages: pillow
+   - `resize_image.py` — packages: pillow (behöver Claude review)
+
+2. **Uppdatera pipeline** i apiai.me:
+   - Lägg till downscale_image före nod 8, 15, 18 (`max_pixels=2000000`)
+   - Sätt `passthrough_on_mismatch=true` på nod 12
+
+3. **Kör pipeline eval igen** — verifiera Kumla, Tyresö, team_usa fungerar
+
+---
+
+## apiai.me upload — redo
+
+### downscale_image.py
+
+**Description:**
+```
+Scale down images to fit within pixel or file size limits. Useful before GPU-limited upscalers (Real-ESRGAN max ~2.1MP) or for web optimization. Only shrinks - images already within limits pass through unchanged.
+```
+
+**Packages:** `pillow`
+
+### resize_image.py
+
+**Description:**
+```
+Resize image to specific dimensions with fit modes. Supports: contain (fit within, preserve ratio), cover (fill, may crop), stretch (exact size, may distort). If only width or height is provided, the other is calculated to preserve aspect ratio.
+```
+
+**Packages:** `pillow`
+
+---
+
+## Key learnings (denna session)
+
+1. **Pipeline API format** — apiai.me använder multipart form-data med `files=` och `X-API-Key` header
+2. **Real-ESRGAN GPU limit** — max ~2.1MP (2,096,704 pixels)
+3. **Passthrough pattern** — returnera original oförändrad istället för att faila
+4. **Script workflow i pipeline-arbete** — följ SCRIPT_GUIDELINES även för snabba fixes
 
 ---
 
@@ -88,19 +88,6 @@ Pipeline gick från 14 → 19 noder med 5 condition-noder.
 
 ```
 customers/heja/pipeline/scratch/
-├── leopards_border_test.png          # 2px border test
-├── leopards_border_3px.png           # 3px border test
-├── leopards_border_10px.png          # 10px border test
-├── leopards_border_50px_padded.png   # 50px med auto-padding
-├── leopards_border_blue.png          # Custom color test
-├── cantagalo_border_test.png         # Cantagalo (ingen border) ✅
-└── cantagalo_gpt2_border_test.png    # GPT2 output test ✅
+├── eval_pipeline.py              # Pipeline eval script
+└── (tidigare border test-filer)
 ```
-
-## Key learnings (denna session)
-
-1. **Condition nodes räknas** — 14 noder + 5 conditions = 19 noder totalt
-2. **Vectorize loops** — numpy boolean indexing snabbare än Python loops
-3. **Pre-compute Lab** — undvik att köra rgb2lab för varje färgbyte
-4. **Auto-padding** — border kan göra bilden större om loggan är nära kanten
-5. **Darkest color auto** — #163b4b (luminance 50) kan se svart ut, ge möjlighet till manuell färg
