@@ -357,7 +357,7 @@ Remove background outside the team emblem. Important keep the logo identical wit
 | crop_transparent | `scripts/crop_transparent.py` | 9, 19 |
 | check_transparency | `scripts/check_transparency.py` | 10 |
 | remove_solid_background | `scripts/remove_solid_background.py` | 12 |
-| prep_for_upscale | `scripts/prep_for_upscale.py` | före 8, 15, 18 |
+| resize_image | `scripts/resize_image.py` | före 8, 15, 18 |
 
 ---
 
@@ -369,8 +369,10 @@ Remove background outside the team emblem. Important keep the logo identical wit
 | Replicate Florence-2 | 1, 5 | Logo-detektion, auto-crop av referensbild |
 | Replicate Real-ESRGAN | 8, 15, 18 | Uppskalning (max ~2.1MP input) |
 
-> **OBS:** Real-ESRGAN har GPU-gräns på ~2.1MP. Använd `prep_for_upscale.py` före upscaler-noder
-> för att resiza ner bilder som är för stora.
+> **OBS:** Real-ESRGAN har GPU-gräns på ~2.1MP. Använd `resize_image.py` med `max_pixels=2000000`
+> före upscaler-noder för att resiza ner bilder som är för stora.
+>
+> `resize_image.py` stödjer också `max_bytes` för filstorlek (webb-optimering).
 
 ---
 
