@@ -22,6 +22,23 @@ The rule now: **prove one node at a time.**
 A single node is generic (no customer/use-case refs — see SCRIPT_GUIDELINES). A **pipeline is
 use-case specific** — it chains generic nodes for a concrete outcome. Keep them apart.
 
+## Creating or modifying scripts during pipeline work
+
+When fixing a pipeline bug or adding a feature, you may need to **create a new script** or
+**modify an existing one**. This is where mistakes happen — you're focused on the pipeline
+and skip the script workflow.
+
+**Rule: Always follow SCRIPT_GUIDELINES, even in "pipeline mode".**
+
+Before deploying a new or modified script:
+1. **Description** — write the apiai.me description (what it does, in English)
+2. **Packages** — list required Python packages for the platform
+3. **Local test** — run on test data, verify it works
+4. **Claude review** — upload to apiai.me and get Claude review feedback
+5. **Live test** — test as API on the site
+
+Don't skip steps because "it's just a quick fix". Quick fixes that skip review cause regressions.
+
 ## Any report a pipeline produces self-documents its settings
 
 A step-by-step run report is evidence, and evidence you cannot reproduce from is worthless six
