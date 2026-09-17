@@ -288,3 +288,16 @@ image (the original) and corrects drifted colors:
 - **ΔE interpretation:** 0-5 imperceptible, 5-10 noticeable, 10-15 obvious drift, 15+ severe
 
 See `scripts/correct_colors.py` for a reference implementation.
+
+**Fix edge cases with scripts, not prompts.** When a generative model produces incorrect output
+for some inputs (e.g., white text that disappears, wrong colors on one logo), the instinct is
+to tweak the prompt. **Don't.** Prompt changes that fix one edge case often break others — the
+model interprets prompts unpredictably across diverse inputs. Instead:
+
+1. **Detect the problem deterministically** — e.g., check if >20% of the object's edge pixels are white
+2. **Fix it with a script** — e.g., add a dark border using the logo's own colors
+3. **Make it conditional** — only apply the fix when the problem is detected
+
+This keeps the generative step simple and predictable, while handling edge cases reliably.
+Example: `correct_colors.py` detects white edges and adds a border only when needed, rather
+than asking GPT-2 to "always add a border" (which would affect logos that don't need one).
