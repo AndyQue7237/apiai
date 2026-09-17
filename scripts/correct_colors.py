@@ -37,6 +37,7 @@ import os
 import numpy as np
 from PIL import Image
 from scipy.cluster.vq import kmeans2
+from scipy.spatial.distance import cdist
 from skimage.color import rgb2lab
 
 # Optional: replicate for auto-crop (Florence-2)
@@ -64,7 +65,7 @@ DEFAULT_CLUSTER_MERGE_THRESHOLD = 8.0  # Merge clusters with ΔE < this
 MAX_CLUSTER_DIM = 400
 
 # K-means stability (simulate sklearn's n_init)
-KMEANS_N_INIT = 10  # Run clustering multiple times, pick best (matches sklearn default)
+KMEANS_N_INIT = 10  # Run clustering multiple times, pick best
 
 # Maximum ΔE for a valid color match (beyond this, it's not drift, it's wrong match)
 MAX_MATCH_DELTA_E = 40
@@ -155,6 +156,20 @@ PARAM_DEFS = [
 
 # ───────────────────────────── helpers ─────────────────────────────
 
+def clamp_params(min_coverage, min_delta_e, n_clusters, cluster_merge_threshold,
+                 border_width, white_edge_threshold, white_edge_percent):
+    """Clamp all numeric parameters to valid ranges."""
+    return (
+        max(1.0, min(50.0, min_coverage)),
+        max(5.0, min(50.0, min_delta_e)),
+        max(8, min(20, n_clusters)),
+        max(5.0, min(15.0, cluster_merge_threshold)),
+        max(1, min(50, border_width)),
+        max(200, min(255, white_edge_threshold)),
+        max(5, min(50, white_edge_percent)),
+    )
+
+
 def auto_crop_image(img, query):
     """
     Auto-crop image using Florence-2 object detection via Replicate.
@@ -187,17 +202,20 @@ def auto_crop_image(img, query):
         log.warning("Florence-2 API error: %s, using original image", e)
         return img
 
-    # Parse output - handle both dict and generator/list outputs
+    # Parse output - handle dict, generator, or list outputs
     if isinstance(output, dict):
         text_output = output.get("text", "")
+    elif hasattr(output, '__iter__') and not isinstance(output, str):
+        # Generator or list - join all parts
+        text_output = "".join(str(x) for x in output)
     else:
-        # Some model versions return a generator/list
         text_output = str(output)
+
     try:
         import ast
         parsed = ast.literal_eval(text_output) if isinstance(text_output, str) else text_output
     except Exception:
-        log.warning("Could not parse Florence-2 output, using original image")
+        log.warning("Could not parse Florence-2 output: %s", text_output[:100] if text_output else "empty")
         return img
 
     grounding = parsed.get("<CAPTION_TO_PHRASE_GROUNDING>", {})
@@ -315,7 +333,6 @@ def extract_colors(img, n_colors=12, exclude_bw=True):
         return []
 
     # Run kmeans2 multiple times and pick best result (simulate sklearn n_init)
-    # This improves stability since scipy kmeans2 can be sensitive to initialization
     best_centroids, best_labels, best_distortion = None, None, float('inf')
     for i in range(KMEANS_N_INIT):
         try:
@@ -392,14 +409,14 @@ def extract_colors_with_labels(img, n_colors=12):
     if best_centroids is None:
         return [], None, None
 
-    # Assign labels to FULL resolution image (vectorized)
+    # Assign labels to FULL resolution image
+    # Note: labels must be full-resolution for cluster-based replacement to work
     pixels_full = orig_pixels.reshape(-1, 4)
     opaque_mask_full = pixels_full[:, 3] > 128
     opaque_full = pixels_full[opaque_mask_full][:, :3].astype(np.float32)
 
-    # Vectorized: compute distances to all centroids
-    diff = opaque_full[:, np.newaxis, :] - best_centroids[np.newaxis, :, :]
-    distances = np.sum(diff ** 2, axis=2)
+    # Use cdist for memory-efficient distance calculation (avoids O(N×K×3) intermediate array)
+    distances = cdist(opaque_full, best_centroids, metric='sqeuclidean')
     labels_full_opaque = np.argmin(distances, axis=1)
 
     # Create full labels array (-1 for transparent)
@@ -436,12 +453,9 @@ def merge_similar_clusters(colors, labels, centroids, threshold=DEFAULT_CLUSTER_
     """
     n_clusters = len(centroids)
 
-    # Convert centroids to Lab for ΔE calculation
-    centroids_lab = []
-    for c in centroids:
-        rgb_norm = np.array([[c[:3]]], dtype=np.float32) / 255.0
-        centroids_lab.append(rgb2lab(rgb_norm)[0, 0])
-    centroids_lab = np.array(centroids_lab)
+    # Convert all centroids to Lab in one batch (faster than per-centroid)
+    centroids_rgb = np.clip(centroids, 0, 255).reshape(1, -1, 3).astype(np.float32) / 255.0
+    centroids_lab = rgb2lab(centroids_rgb)[0]  # shape (n_clusters, 3)
 
     # Build coverage map from colors list
     coverage = np.zeros(n_clusters)
@@ -922,13 +936,11 @@ def main():
     border_color = params.get("border_color", "auto") or "auto"
 
     # Clamp to valid ranges
-    min_coverage = max(1.0, min(50.0, min_coverage))
-    min_delta_e = max(5.0, min(50.0, min_delta_e))
-    n_clusters = max(8, min(20, n_clusters))
-    cluster_merge_threshold = max(5.0, min(15.0, cluster_merge_threshold))
-    border_width = max(1, min(50, border_width))
-    white_edge_threshold = max(200, min(255, white_edge_threshold))
-    white_edge_percent = max(5, min(50, white_edge_percent))
+    (min_coverage, min_delta_e, n_clusters, cluster_merge_threshold,
+     border_width, white_edge_threshold, white_edge_percent) = clamp_params(
+        min_coverage, min_delta_e, n_clusters, cluster_merge_threshold,
+        border_width, white_edge_threshold, white_edge_percent
+    )
 
     # Decode images
     try:
@@ -1041,13 +1053,11 @@ def run_local_cli():
     ref_img = Image.open(args.reference).convert("RGBA")
 
     # Clamp params
-    min_coverage = max(1.0, min(50.0, args.min_coverage))
-    min_delta_e = max(5.0, min(50.0, args.min_delta_e))
-    n_clusters = max(8, min(20, args.n_clusters))
-    cluster_merge_threshold = max(5.0, min(15.0, args.cluster_merge_threshold))
-    border_width = max(1, min(50, args.border_width))
-    white_edge_threshold = max(200, min(255, args.white_edge_threshold))
-    white_edge_percent = max(5, min(50, args.white_edge_percent))
+    (min_coverage, min_delta_e, n_clusters, cluster_merge_threshold,
+     border_width, white_edge_threshold, white_edge_percent) = clamp_params(
+        args.min_coverage, args.min_delta_e, args.n_clusters, args.cluster_merge_threshold,
+        args.border_width, args.white_edge_threshold, args.white_edge_percent
+    )
 
     log.info("Input: %s (%dx%d)", args.input, *gen_img.size)
     log.info("Reference: %s (%dx%d)", args.reference, *ref_img.size)
