@@ -49,6 +49,8 @@ PARAM_DEFS = [
         "type": "int",
         "description": "JPEG quality 1-100 when outputting JPEG or checking file size (default: 85)",
         "default_value": "85",
+        "min_value": "1",
+        "max_value": "100",
     },
 ]
 
@@ -76,7 +78,7 @@ def resize_for_pixels(img, max_pixels):
     new_height = max(1, int(height * scale))
 
     # Ensure we don't exceed due to rounding
-    while new_width * new_height > max_pixels and new_width > 1:
+    while new_width * new_height > max_pixels and new_width > 1 and new_height > 1:
         new_width -= 1
         new_height = max(1, int(new_width * height / width))
 
@@ -160,11 +162,12 @@ def resize_image(img, max_pixels=0, max_bytes=0, quality=85):
     if resized:
         new_width, new_height = result.size
         metadata["resized"] = True
-        metadata["resized_for"] = []
+        reasons = []
         if resized_for_pixels:
-            metadata["resized_for"].append("pixels")
+            reasons.append("pixels")
         if resized_for_bytes:
-            metadata["resized_for"].append("bytes")
+            reasons.append("bytes")
+        metadata["resized_for"] = ", ".join(reasons)
         metadata["new_width"] = new_width
         metadata["new_height"] = new_height
         metadata["new_pixels"] = new_width * new_height
@@ -186,11 +189,11 @@ def main():
         try:
             img = Image.open(io.BytesIO(input_bytes))
 
+            # Store original format BEFORE exif_transpose (clears .format)
+            original_format = img.format
+
             # Handle EXIF rotation (important for JPEG)
             img = ImageOps.exif_transpose(img)
-
-            # Store original format for output
-            original_format = img.format
 
             if img.mode not in ("RGBA", "RGB"):
                 img = img.convert("RGBA")
@@ -247,7 +250,7 @@ def main():
         if metadata["resized"]:
             print(f"Resized:  {metadata['new_width']}×{metadata['new_height']} "
                   f"({metadata['new_pixels']:,} px, {metadata['new_bytes']:,} bytes)")
-            print(f"Reason:   {', '.join(metadata['resized_for'])}")
+            print(f"Reason:   {metadata['resized_for']}")
         else:
             print("No resize needed")
 
