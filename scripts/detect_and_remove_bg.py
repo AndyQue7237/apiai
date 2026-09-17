@@ -32,12 +32,13 @@ from scipy import ndimage
 from script_io import read_input, write_output, write_error
 
 PARAM_DEFS = [
-    {"name": "query", "description": "DINO detection prompt", "default_value": "emblem or shield or badge"},
-    {"name": "box_threshold", "description": "DINO confidence threshold", "default_value": "0.25"},
-    {"name": "bg_color", "description": "Background color: 'auto' or hex like '#FFFFFF'", "default_value": "auto"},
-    {"name": "tolerance", "description": "Color distance for flood fill (0-255)", "default_value": "20"},
-    {"name": "feather", "description": "Edge softness in pixels (0-3)", "default_value": "1"},
-    {"name": "remove_holes_threshold", "description": "Remove islands smaller than X% outside protected zone", "default_value": "2"},
+    {"name": "query", "type": "string", "description": "DINO detection prompt", "default_value": "emblem or shield or badge"},
+    {"name": "box_threshold", "type": "float", "description": "DINO confidence threshold", "default_value": "0.25"},
+    {"name": "bg_color", "type": "string", "description": "Background color: 'auto' or hex like '#FFFFFF'", "default_value": "auto"},
+    {"name": "tolerance", "type": "int", "description": "Color distance for flood fill (0-255)", "default_value": "20"},
+    {"name": "feather", "type": "int", "description": "Edge softness in pixels (0-3)", "default_value": "1"},
+    {"name": "remove_holes_threshold", "type": "float", "description": "Remove islands smaller than X% outside protected zone", "default_value": "2"},
+    {"name": "passthrough_on_mismatch", "type": "boolean", "description": "If true, pass through image unchanged when corner colors don't match (instead of error)", "default_value": "false"},
 ]
 
 
@@ -269,7 +270,7 @@ def apply_feather(img, mask, feather_px):
     return Image.fromarray(pixels)
 
 
-def remove_bg(img, bg_color, tolerance, feather, remove_holes_threshold, protected_box):
+def remove_bg(img, bg_color, tolerance, feather, remove_holes_threshold, protected_box, passthrough_on_mismatch=False):
     """Remove solid color background from image with protected zone."""
     if img.mode != 'RGBA':
         img = img.convert('RGBA')
@@ -283,6 +284,9 @@ def remove_bg(img, bg_color, tolerance, feather, remove_holes_threshold, protect
         matches, avg_color = colors_match(corners, tolerance=30)
 
         if not matches:
+            if passthrough_on_mismatch:
+                # Return original image unchanged
+                return img, {"passthrough": True, "reason": "corner_colors_mismatch"}
             raise ValueError("Corner colors don't match - cannot auto-detect background")
 
         detected_color = avg_color
@@ -348,9 +352,10 @@ def main():
         feather = int(params.get("feather", "1"))
         feather = max(0, min(3, feather))
         remove_holes_threshold = float(params.get("remove_holes_threshold", "2"))
+        passthrough_on_mismatch = str(params.get("passthrough_on_mismatch", "false")).lower() == "true"
 
         result_img, bg_metadata = remove_bg(
-            img, bg_color, tolerance, feather, remove_holes_threshold, protected_box
+            img, bg_color, tolerance, feather, remove_holes_threshold, protected_box, passthrough_on_mismatch
         )
 
         # Step 5: Encode result

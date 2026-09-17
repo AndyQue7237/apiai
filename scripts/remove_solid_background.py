@@ -38,10 +38,11 @@ except ImportError:
     HAS_SCRIPT_IO = False
 
 PARAM_DEFS = [
-    {"name": "bg_color", "description": "Background color: 'auto' or hex like '#FFFFFF'", "default_value": "auto"},
-    {"name": "tolerance", "description": "Color distance for flood fill (0-255)", "default_value": "20"},
-    {"name": "feather", "description": "Edge softness in pixels (0-3)", "default_value": "1"},
-    {"name": "remove_holes_threshold", "description": "Remove inner islands smaller than X% of image (0 = disabled)", "default_value": "0"},
+    {"name": "bg_color", "type": "string", "description": "Background color: 'auto' or hex like '#FFFFFF'", "default_value": "auto"},
+    {"name": "tolerance", "type": "int", "description": "Color distance for flood fill (0-255)", "default_value": "20"},
+    {"name": "feather", "type": "int", "description": "Edge softness in pixels (0-3)", "default_value": "1"},
+    {"name": "remove_holes_threshold", "type": "float", "description": "Remove inner islands smaller than X% of image (0 = disabled)", "default_value": "0"},
+    {"name": "passthrough_on_mismatch", "type": "boolean", "description": "If true, pass through image unchanged when corner colors don't match (instead of error)", "default_value": "false"},
 ]
 
 
@@ -183,7 +184,7 @@ def apply_feather(img, mask, feather_px):
     return Image.fromarray(pixels)
 
 
-def remove_bg(img, bg_color="auto", tolerance=20, feather=1, remove_holes_threshold=0):
+def remove_bg(img, bg_color="auto", tolerance=20, feather=1, remove_holes_threshold=0, passthrough_on_mismatch=False):
     """Remove solid color background from image."""
     if img.mode != 'RGBA':
         img = img.convert('RGBA')
@@ -197,6 +198,9 @@ def remove_bg(img, bg_color="auto", tolerance=20, feather=1, remove_holes_thresh
         matches, avg_color = colors_match(corners, tolerance=30)
 
         if not matches:
+            if passthrough_on_mismatch:
+                # Return original image unchanged
+                return img, {"passthrough": True, "reason": "corner_colors_mismatch"}
             raise ValueError("Corner colors don't match - cannot auto-detect background")
 
         detected_color = avg_color
@@ -251,11 +255,12 @@ def main():
             tolerance = int(params.get("tolerance", "20"))
             feather = int(params.get("feather", "1"))
             remove_holes_threshold = float(params.get("remove_holes_threshold", "0"))
+            passthrough_on_mismatch = str(params.get("passthrough_on_mismatch", "false")).lower() == "true"
 
             # Clamp feather to valid range
             feather = max(0, min(3, feather))
 
-            result_img, metadata = remove_bg(img, bg_color, tolerance, feather, remove_holes_threshold)
+            result_img, metadata = remove_bg(img, bg_color, tolerance, feather, remove_holes_threshold, passthrough_on_mismatch)
 
             buf = io.BytesIO()
             result_img.save(buf, format="PNG")

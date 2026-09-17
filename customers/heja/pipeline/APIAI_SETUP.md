@@ -125,7 +125,7 @@ Remove background outside the team emblem. Important keep the logo identical wit
 | `auto_crop_reference` | `true` |
 | `crop_query` | `"complete logo with text, full team logo with text, entire emblem, club logo"` |
 | `add_edge_border` | `true` |
-| `border_width` | `20` |
+| `border_width` | `10` |
 | `border_color` | `auto` |
 | `white_edge_threshold` | `240` |
 | `white_edge_percent` | `20` |
@@ -232,10 +232,11 @@ Remove background outside the team emblem. Important keep the logo identical wit
 | `bg_color` | `auto` |
 | `tolerance` | `20` |
 | `feather` | `1` |
-| `detections` | `false` |
 | `remove_holes_threshold` | `0` |
+| `passthrough_on_mismatch` | `true` |
 
 > Körs endast om `has_transparency=false`.
+> Med `passthrough_on_mismatch=true` skickas bilden vidare oförändrad om hörnen har olika färger (t.ex. team_usa med gradient).
 
 ---
 
@@ -356,6 +357,7 @@ Remove background outside the team emblem. Important keep the logo identical wit
 | crop_transparent | `scripts/crop_transparent.py` | 9, 19 |
 | check_transparency | `scripts/check_transparency.py` | 10 |
 | remove_solid_background | `scripts/remove_solid_background.py` | 12 |
+| prep_for_upscale | `scripts/prep_for_upscale.py` | före 8, 15, 18 |
 
 ---
 
@@ -365,7 +367,10 @@ Remove background outside the team emblem. Important keep the logo identical wit
 |---------|-------|-------|
 | OpenAI GPT Image 2 | 4 | Bakgrundsborttagning + enhancement |
 | Replicate Florence-2 | 1, 5 | Logo-detektion, auto-crop av referensbild |
-| Replicate Real-ESRGAN | 8, 15, 18 | Uppskalning |
+| Replicate Real-ESRGAN | 8, 15, 18 | Uppskalning (max ~2.1MP input) |
+
+> **OBS:** Real-ESRGAN har GPU-gräns på ~2.1MP. Använd `prep_for_upscale.py` före upscaler-noder
+> för att resiza ner bilder som är för stora.
 
 ---
 
