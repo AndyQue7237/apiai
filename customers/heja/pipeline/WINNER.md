@@ -26,7 +26,7 @@ Condition-noder räknas som egna steg.
 | 2 | Check Quality | `mp_high=1.0` · `mp_low=0.09` · `flatness=80` · `gradient=50` |
 | 3 | **Condition** | skip 6 when `has_high_quality`=`true` → nod 10 |
 | 4 | **GPT Image 2** | `background=transparent` · `output_format=png` · `quality=medium` · `size=auto` |
-| 5 | **Correct Colors** | `image_reference=original` · `auto_crop_reference=true` · `min_coverage=5` · `min_delta_e=10` |
+| 5 | **Correct Colors** | `image_reference=original` · `auto_crop_reference=true` · `min_coverage=5` · `min_delta_e=10` · `add_edge_border=true` · `border_width=10` |
 | 6 | Check Resolution | `min_pixels=5000000` |
 | 7 | **Condition** | skip 1 when `is_high_resolution`=`true` → nod 9 |
 | 8 | Upscale 4x | `scale=4` · `face_enhance=false` |

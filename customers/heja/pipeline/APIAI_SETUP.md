@@ -113,7 +113,7 @@ Remove background outside the team emblem. Important keep the logo identical wit
 ### 5. Correct Colors
 
 **Script:** `correct_colors.py`
-**Purpose:** Korrigera färgdrift från GPT-2
+**Purpose:** Korrigera färgdrift från GPT-2 + lägg till border vid vita kanter
 
 | Parameter | Value |
 |-----------|-------|
@@ -123,8 +123,15 @@ Remove background outside the team emblem. Important keep the logo identical wit
 | `n_clusters` | `12` |
 | `auto_crop_reference` | `true` |
 | `crop_query` | `"complete logo with text, full team logo with text, entire emblem, club logo"` |
+| `add_edge_border` | `true` |
+| `border_width` | `10` |
+| `border_color` | `auto` |
+| `white_edge_threshold` | `240` |
+| `white_edge_percent` | `20` |
 
 > Med `auto_crop_reference=true` kan originalfilen användas direkt — scriptet croppar internt via Florence-2.
+>
+> Med `add_edge_border=true` läggs en mörk border till om >20% av objektets kant är vit (t.ex. Leopards). Färgen väljs automatiskt (mörkaste med >5% coverage).
 
 ---
 
