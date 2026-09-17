@@ -249,7 +249,8 @@ Three gates, in order — the **node**, then the **platform**, then the **site**
    **⚠️ Re-test after review changes.** The reviewer can suggest changes that break the script
    (e.g. adjusting thresholds, swapping libraries, "simplifying" logic). After implementing
    review feedback, **re-run the local test (step 1)** before proceeding. Never trust review
-   changes blindly — verify they work.
+   changes blindly — verify they work. **Compare before/after results** — if a test that passed
+   before now fails (or produces different output), the review "fix" is likely a regression.
 
    **Fold generalizable feedback back into these guidelines.** When a flag is a *general*
    lesson (a rule any future node should follow), add it to §1–§9 — not just fix this script;
