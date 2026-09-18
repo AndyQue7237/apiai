@@ -34,14 +34,14 @@ PARAM_DEFS = [
     {
         "name": "max_pixels",
         "type": "int",
-        "description": "Maximum total pixels (width × height). 0 = no limit. Use 2000000 for Real-ESRGAN GPU limit.",
-        "default_value": "0",
+        "description": "Maximum total pixels (width × height). Leave empty for no limit. Use 2000000 for Real-ESRGAN GPU limit.",
+        "default_value": "",
     },
     {
         "name": "max_bytes",
         "type": "int",
-        "description": "Maximum file size in bytes. 0 = no limit. Use 1048576 for 1MB, 5242880 for 5MB.",
-        "default_value": "0",
+        "description": "Maximum file size in bytes. Leave empty for no limit. Use 1048576 for 1MB, 5242880 for 5MB.",
+        "default_value": "",
     },
 ]
 
@@ -190,8 +190,8 @@ def main():
             if img.mode not in ("RGBA", "RGB"):
                 img = img.convert("RGBA")
 
-            max_pixels = int(params.get("max_pixels", "0"))
-            max_bytes = int(params.get("max_bytes", "0"))
+            max_pixels = int(params.get("max_pixels") or 0)
+            max_bytes = int(params.get("max_bytes") or 0)
 
             result_img, metadata = resize_image(img, max_pixels, max_bytes)
 
