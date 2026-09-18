@@ -311,6 +311,98 @@ def is_black_or_white_or_highlight(rgb):
     return None
 
 
+# ─────────────────── Solid background removal for reference ───────────────────
+
+def sample_corners(img, sample_size=5):
+    """Sample colors from all 4 corners of the image."""
+    pixels = np.array(img)
+    h, w = pixels.shape[:2]
+
+    corners = []
+    positions = [
+        (0, 0),
+        (0, w - sample_size),
+        (h - sample_size, 0),
+        (h - sample_size, w - sample_size)
+    ]
+
+    for y, x in positions:
+        region = pixels[y:y+sample_size, x:x+sample_size, :3]
+        avg_color = tuple(int(c) for c in region.mean(axis=(0, 1)))
+        corners.append(avg_color)
+
+    return corners
+
+
+def corners_match(colors, tolerance=30):
+    """Check if all corner colors are similar enough. Returns (match, avg_color)."""
+    if not colors:
+        return False, (255, 255, 255)
+
+    avg = tuple(int(sum(c[i] for c in colors) / len(colors)) for i in range(3))
+
+    for color in colors:
+        distance = sum(abs(color[i] - avg[i]) for i in range(3))
+        if distance > tolerance * 3:
+            return False, avg
+
+    return True, avg
+
+
+def remove_solid_bg_from_reference(img, tolerance=20):
+    """
+    Remove solid background from reference image if corners match.
+
+    This prevents background colors (white/black) from being included
+    in color extraction, which can cause false matches.
+
+    Returns (cleaned_image, was_removed).
+    """
+    from scipy import ndimage
+
+    if img.mode != 'RGBA':
+        img = img.convert('RGBA')
+
+    # Check if corners have solid color
+    corners = sample_corners(img)
+    match, bg_color = corners_match(corners, tolerance)
+
+    if not match:
+        return img, False
+
+    # Flood fill from edges to find background
+    pixels = np.array(img)
+    h, w = pixels.shape[:2]
+    rgb = pixels[:, :, :3]
+
+    # Distance from background color
+    diff = np.abs(rgb.astype(float) - np.array(bg_color))
+    dist = diff.sum(axis=2)
+    within_tolerance = dist <= (tolerance * 3)
+
+    # Start from edges
+    edge_mask = np.zeros((h, w), dtype=bool)
+    edge_mask[0, :] = True
+    edge_mask[-1, :] = True
+    edge_mask[:, 0] = True
+    edge_mask[:, -1] = True
+
+    seed = edge_mask & within_tolerance
+
+    # Flood fill
+    background = ndimage.binary_dilation(
+        seed,
+        iterations=-1,
+        mask=within_tolerance
+    )
+
+    # Make background transparent
+    pixels[background, 3] = 0
+
+    log.info("Removed solid background from reference (color: #%02x%02x%02x)", *bg_color)
+    return Image.fromarray(pixels), True
+
+
 def extract_colors(img, n_colors=12, exclude_bw=True):
     """
     Extract dominant colors from image using k-means clustering.
@@ -622,8 +714,12 @@ def apply_color_correction(gen_img, ref_img, min_coverage, min_delta_e, n_cluste
         gen_colors, gen_labels, gen_centroids, threshold=cluster_merge_threshold
     )
 
+    # Remove solid background from reference (prevents matching against white/black bg)
+    ref_img_clean, bg_removed = remove_solid_bg_from_reference(ref_img, tolerance=20)
+
     # Extract reference colors (no labels needed, just for matching)
-    ref_colors = extract_colors(ref_img, n_colors=n_clusters)
+    # exclude_bw=False because solid background is already removed
+    ref_colors = extract_colors(ref_img_clean, n_colors=n_clusters, exclude_bw=not bg_removed)
 
     if not ref_colors:
         log.warning("Could not extract colors from reference image")

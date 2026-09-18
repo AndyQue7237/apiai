@@ -62,6 +62,7 @@ Andreas egna ord. Tre enkla meningar slår NB Pros sex numrerade regelblock: **e
 | 2026-09-04 | v2 | 10 loggor | 10/10 | Med kvalitetsrouting (buggig) |
 | 2026-09-04 | v2-fix | 9 loggor | 9/9 | Fixad routing (kvalitet före transparens) |
 | 2026-09-08 | v2-gradient | 10 loggor | 10/10 | Gradient-fix + GPT-2 transparens + Replicate ESRGAN |
+| 2026-09-18 | v2-colorfix | 10 loggor | 8/10 | Chicago himmel-fix verifierad, 2 GPU OOM (små loggor) |
 
 Rapport: `out/steps.html` (en flik per tag).
 Human eval av föregående mästare: `../../evaluator/customers/heja/HUMAN_EVAL.md`.
@@ -100,6 +101,46 @@ GPT Image 2: noll sömmar på alla nio. NB Pro-kedjan: sömmar på två av åtta
 
 Transparent bild med dåliga kanter. Modellen kan inte "se" vad som var transparent från början —
 den gissar. Lösning: kvalitetsrouting baserad på gradient_pct, inte bara transparens.
+
+### CUDA OOM vid dubbel uppskalning (bekräftat)
+
+**Status:** Bekräftat mönster (2026-09-18)
+
+**Observation:** Två loggor under 0.15 MP failar konsekvent med 502 (CUDA OOM):
+
+| Logo | Original MP | Förväntad output | Status |
+|------|-------------|------------------|--------|
+| Hammarby | 0.100 | 6.4 MP (4x→2x) | ❌ OOM |
+| Tyresö | 0.147 | 9.4 MP (4x→2x) | ❌ OOM |
+
+**Flöde för små loggor (<312k px):**
+```
+Original 0.1-0.15 MP → nod 17 (4x) → 1.6 MP → nod 21 (2x) → 6-9 MP
+```
+Ingen downscale triggas (båda under 2 MP-gränsen).
+
+**Slutsats:** Hypotes A bekräftad — två upscales i rad överbelastar GPU.
+
+**Fix (ej implementerad):** Sänk `max_pixels` i nod 20 (Check Resolution före 2x) till 1.25 MP.
+Detta tvingar en downscale mellan 4x och 2x, vilket ger GPU tid att frigöra minne.
+
+### Chicago himmel-fix (2026-09-18) ✅
+
+**Problem:** Himlen i Chicago-loggan (#d6e9f6, 12%) korrigerades felaktigt till blå (#8bc2e3).
+
+**Orsak:** Referensbildens ljusgrå färg (#e4ecf5) exkluderades som "highlight" (avg=237 > 220,
+sat=18 < 30). Den vita bakgrunden var kvar → highlight-filter triggades.
+
+**Fix:** `correct_colors.py` tar nu bort solid bakgrund från referensen innan färgextraktion.
+Använder samma logik som `remove_solid_background.py` (sample corners, flood fill).
+
+**Verifierad:** 2026-09-18 — Chicago passerar nu utan färgfel (94s, 4912×4912 output).
+
+**Potentiell förbättring (backlog):** Referensfärger har ingen min_coverage-gräns — en genererad
+färg kan matchas mot en 0.1%-färg i referensen. Om detta orsakar problem, lägg till:
+```python
+ref_colors = [(c, pct) for c, pct in ref_colors if pct >= 1.0]  # 1% filter
+```
 
 ## Learnings
 
