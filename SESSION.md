@@ -1,86 +1,72 @@
 # Session Memory — apiai
 
-Senast uppdaterad: 2026-09-17
+Senast uppdaterad: 2026-09-18
 
 ## Aktuellt fokus
 
-**Pipeline eval + GPU-fix + nya resize-scripts**
+**Chicago color fix verifierad + CUDA OOM-mönster bekräftat**
 
-Pipeline eval visade 7/10 pass, 3 failures:
-- Kumla/Tyresö: GPU OOM (>2.1MP)
-- team_usa: "Corner colors don't match"
+Pipeline eval 8/10 pass:
+- Chicago: Fix verifierad (himmel behåller rätt färg)
+- Hammarby/Tyresö: CUDA OOM (loggor <0.15 MP, dubbel upscale)
 
-Fixar klara, väntar på deploy till apiai.me.
+Fix implementerad i apiai.me (nod 20 → 1.25 MP), väntar på serverkapacitet för test.
 
 ---
 
-## Sessionen (2026-09-17)
+## Sessionen (2026-09-18)
 
 ### Vad vi gjorde
 
-1. **Pipeline eval** — skapade eval_pipeline.py, körde 10 loggor
-2. **team_usa fix** — lade till `passthrough_on_mismatch` i remove_solid_background.py
-3. **GPU-fix** — skapade downscale_image.py (max_pixels=2000000 före upscaler)
-4. **resize_image.py** — återbyggde scriptet (width/height/fit modes)
-5. **Metoduppdatering** — lade till regler om SCRIPT_GUIDELINES i pipeline-arbete
+1. **Chicago himmel-fix** — correct_colors.py tar nu bort solid bakgrund från referensbilden innan färgextraktion. Fixar att vita bakgrunder triggade highlight-filter som exkluderade ljusgrå färger.
 
-### Nya scripts
+2. **CUDA OOM bekräftat** — Två loggor under 0.15 MP (Hammarby 0.10, Tyresö 0.15) failar konsekvent. Orsak: dubbel upscale (4x → 2x) utan downscale mellan. Fix: sänk nod 20 till 1.25 MP.
 
-| Script | Syfte |
-|--------|-------|
-| `downscale_image.py` | Skala ned för GPU-gränser (max_pixels) eller filstorlek (max_bytes) |
-| `resize_image.py` | Resize till specifika dimensioner (contain/cover/stretch) |
+3. **Script cleanup** — Raderade gamla DINO-scripts:
+   - `detect_and_remove_bg.py` (DINO funkar inte på Replicate)
+   - `remove_bg.py` (gammal version)
+
+4. **WINNER.md uppdaterad** — Chicago fix dokumenterad, CUDA OOM-mönster bekräftat.
+
+### Pipeline eval resultat
+
+| Logo | Status | Output |
+|------|--------|--------|
+| Cantagalo | OK | 4648×4648 |
+| Chicago | OK | 4912×4912 |
+| Hammarby | GPU OOM | — |
+| Kumla | OK | 5606×5606 |
+| leopards | OK | 4651×4651 |
+| Knivsta | OK | 4824×4824 |
+| team_usa | OK | 2958×2958 |
+| Trollbäckens | OK | 2390×2390 |
+| Tyresö | GPU OOM | — |
+| Warner | OK | 3910×3910 |
 
 ### Commits
 
-- `e0311b7` Fix correct_colors.py based on apiai.me review
-- `02c5564` Rename constrain_image to downscale_image (clearer name)
-- Flera commits för passthrough_on_mismatch, metoddokumentation
+- `174ac6b` Fix Chicago sky color + cleanup unused bg scripts
 
 ---
 
 ## Nästa session
 
-1. **Ladda upp scripts** till apiai.me:
-   - `downscale_image.py` — packages: pillow
-   - `resize_image.py` — packages: pillow (behöver Claude review)
-
-2. **Uppdatera pipeline** i apiai.me:
-   - Lägg till downscale_image före nod 8, 15, 18 (`max_pixels=2000000`)
-   - Sätt `passthrough_on_mismatch=true` på nod 12
-
-3. **Kör pipeline eval igen** — verifiera Kumla, Tyresö, team_usa fungerar
-
----
-
-## apiai.me upload — redo
-
-### downscale_image.py
-
-**Description:**
-```
-Scale down images to fit within pixel or file size limits. Useful before GPU-limited upscalers (Real-ESRGAN max ~2.1MP) or for web optimization. Only shrinks - images already within limits pass through unchanged.
-```
-
-**Packages:** `pillow`
-
-### resize_image.py
-
-**Description:**
-```
-Resize image to specific dimensions with fit modes. Supports: contain (fit within, preserve ratio), cover (fill, may crop), stretch (exact size, may distort). If only width or height is provided, the other is calculated to preserve aspect ratio.
-```
-
-**Packages:** `pillow`
+1. **Verifiera GPU-fix** — Kör Hammarby + Tyresö när apiai.me har kapacitet
+2. **Backlog** — Överväg 1% filter på referensfärger om fler färgproblem uppstår
 
 ---
 
 ## Key learnings (denna session)
 
-1. **Pipeline API format** — apiai.me använder multipart form-data med `files=` och `X-API-Key` header
-2. **Real-ESRGAN GPU limit** — max ~2.1MP (2,096,704 pixels)
-3. **Passthrough pattern** — returnera original oförändrad istället för att faila
-4. **Script workflow i pipeline-arbete** — följ SCRIPT_GUIDELINES även för snabba fixes
+1. **Solid bg påverkar färgextraktion** — Vita bakgrunder i referensbilder kan trigga highlight-filter och exkludera legitima ljusa färger.
+
+2. **CUDA OOM-mönster** — Loggor <0.15 MP → dubbel upscale → GPU OOM. Fix: tvinga downscale mellan 4x och 2x.
+
+3. **Färgkorrigering flöde:**
+   - Ta bort solid bg från referens
+   - Extrahera färger
+   - Matcha genererad → referens
+   - Byt pixlar med ΔE/2 tolerans
 
 ---
 
@@ -88,6 +74,7 @@ Resize image to specific dimensions with fit modes. Supports: contain (fit withi
 
 ```
 customers/heja/pipeline/scratch/
-├── eval_pipeline.py              # Pipeline eval script
-└── (tidigare border test-filer)
+├── eval_pipeline.py              # Pipeline eval script (uppdaterad med delay)
+├── trace_gpt2_clusters.py        # Debug: GPT2 färgklustring
+└── trace_merge.py                # Debug: Cluster merging
 ```
