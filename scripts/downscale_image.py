@@ -17,7 +17,6 @@ Use cases:
 Params:
   max_pixels - Maximum total pixels, 0 = no limit (default: 0)
   max_bytes  - Maximum file size in bytes, 0 = no limit (default: 0)
-  quality    - JPEG quality 1-100 when checking file size (default: 85)
 """
 import sys
 import json
@@ -44,24 +43,18 @@ PARAM_DEFS = [
         "description": "Maximum file size in bytes. 0 = no limit. Use 1048576 for 1MB, 5242880 for 5MB.",
         "default_value": "0",
     },
-    {
-        "name": "quality",
-        "type": "int",
-        "description": "JPEG quality 1-100 when outputting JPEG or checking file size (default: 85)",
-        "default_value": "85",
-        "min_value": "1",
-        "max_value": "100",
-    },
 ]
 
+JPEG_QUALITY = 85  # Industry standard "high quality" - visually identical to 100, ~50% smaller
 
-def get_file_size(img, quality=85):
+
+def get_file_size(img):
     """Get approximate file size of image as PNG or JPEG."""
     buf = io.BytesIO()
     if img.mode == "RGBA":
         img.save(buf, format="PNG")
     else:
-        img.save(buf, format="JPEG", quality=quality)
+        img.save(buf, format="JPEG", quality=JPEG_QUALITY)
     return buf.tell()
 
 
@@ -85,9 +78,9 @@ def resize_for_pixels(img, max_pixels):
     return img.resize((new_width, new_height), Image.LANCZOS), True
 
 
-def resize_for_bytes(img, max_bytes, quality=85):
+def resize_for_bytes(img, max_bytes):
     """Resize image to fit within max_bytes file size."""
-    current_size = get_file_size(img, quality)
+    current_size = get_file_size(img)
 
     if current_size <= max_bytes:
         return img, False
@@ -107,7 +100,7 @@ def resize_for_bytes(img, max_bytes, quality=85):
             break
 
         test_img = img.resize((new_width, new_height), Image.LANCZOS)
-        test_size = get_file_size(test_img, quality)
+        test_size = get_file_size(test_img)
 
         if test_size <= max_bytes:
             best_img = test_img
@@ -119,7 +112,7 @@ def resize_for_bytes(img, max_bytes, quality=85):
     return best_img, resized
 
 
-def resize_image(img, max_pixels=0, max_bytes=0, quality=85):
+def resize_image(img, max_pixels=0, max_bytes=0):
     """
     Resize image to fit within constraints.
 
@@ -127,14 +120,13 @@ def resize_image(img, max_pixels=0, max_bytes=0, quality=85):
         img: PIL Image object
         max_pixels: Maximum total pixels (0 = no limit)
         max_bytes: Maximum file size in bytes (0 = no limit)
-        quality: JPEG quality for file size estimation
 
     Returns:
         tuple: (result_img, metadata)
     """
     original_width, original_height = img.size
     original_pixels = original_width * original_height
-    original_bytes = get_file_size(img, quality)
+    original_bytes = get_file_size(img)
 
     metadata = {
         "original_width": original_width,
@@ -155,7 +147,7 @@ def resize_image(img, max_pixels=0, max_bytes=0, quality=85):
 
     # Then, resize for bytes if needed
     if max_bytes > 0:
-        result, resized_for_bytes = resize_for_bytes(result, max_bytes, quality)
+        result, resized_for_bytes = resize_for_bytes(result, max_bytes)
 
     resized = resized_for_pixels or resized_for_bytes
 
@@ -171,7 +163,7 @@ def resize_image(img, max_pixels=0, max_bytes=0, quality=85):
         metadata["new_width"] = new_width
         metadata["new_height"] = new_height
         metadata["new_pixels"] = new_width * new_height
-        metadata["new_bytes"] = get_file_size(result, quality)
+        metadata["new_bytes"] = get_file_size(result)
     else:
         metadata["resized"] = False
 
@@ -200,9 +192,8 @@ def main():
 
             max_pixels = int(params.get("max_pixels", "0"))
             max_bytes = int(params.get("max_bytes", "0"))
-            quality = int(params.get("quality", "85"))
 
-            result_img, metadata = resize_image(img, max_pixels, max_bytes, quality)
+            result_img, metadata = resize_image(img, max_pixels, max_bytes)
 
             # Preserve format: RGBA requires PNG, else prefer original format
             if result_img.mode == "RGBA":
@@ -217,7 +208,7 @@ def main():
             if out_format == "PNG":
                 result_img.save(buf, format="PNG")
             else:
-                result_img.save(buf, format="JPEG", quality=quality)
+                result_img.save(buf, format="JPEG", quality=JPEG_QUALITY)
 
             out_content_type = "image/png" if out_format == "PNG" else "image/jpeg"
             write_output(buf.getvalue(), out_content_type, **metadata)
@@ -233,7 +224,6 @@ def main():
         parser.add_argument("--max-pixels", type=int, default=0, help="Max pixels (0 = no limit)")
         parser.add_argument("--max-bytes", type=int, default=0, help="Max bytes (0 = no limit)")
         parser.add_argument("--max-mb", type=float, default=0, help="Max megabytes (convenience for --max-bytes)")
-        parser.add_argument("--quality", type=int, default=85, help="JPEG quality")
         args = parser.parse_args()
 
         max_bytes = args.max_bytes
@@ -242,7 +232,7 @@ def main():
 
         img = Image.open(args.input)
         img = ImageOps.exif_transpose(img)
-        result, metadata = resize_image(img, args.max_pixels, max_bytes, args.quality)
+        result, metadata = resize_image(img, args.max_pixels, max_bytes)
 
         print(f"Original: {metadata['original_width']}×{metadata['original_height']} "
               f"({metadata['original_pixels']:,} px, {metadata['original_bytes']:,} bytes)")
@@ -258,7 +248,7 @@ def main():
             if result.mode == "RGBA":
                 result.save(args.output, format="PNG")
             else:
-                result.save(args.output, format="JPEG", quality=args.quality)
+                result.save(args.output, format="JPEG", quality=JPEG_QUALITY)
             print(f"Saved: {args.output}")
 
 
