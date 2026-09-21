@@ -63,6 +63,7 @@ Andreas egna ord. Tre enkla meningar slår NB Pros sex numrerade regelblock: **e
 | 2026-09-04 | v2-fix | 9 loggor | 9/9 | Fixad routing (kvalitet före transparens) |
 | 2026-09-08 | v2-gradient | 10 loggor | 10/10 | Gradient-fix + GPT-2 transparens + Replicate ESRGAN |
 | 2026-09-18 | v2-colorfix | 10 loggor | 8/10 | Chicago himmel-fix verifierad, 2 GPU OOM (små loggor) |
+| 2026-09-21 | v2-gpufix | 2 loggor | 2/2 | GPU-fix verifierad (nod 20 → 1.25 MP) |
 
 Rapport: `out/steps.html` (en flik per tag).
 Human eval av föregående mästare: `../../evaluator/customers/heja/HUMAN_EVAL.md`.
@@ -102,27 +103,19 @@ GPT Image 2: noll sömmar på alla nio. NB Pro-kedjan: sömmar på två av åtta
 Transparent bild med dåliga kanter. Modellen kan inte "se" vad som var transparent från början —
 den gissar. Lösning: kvalitetsrouting baserad på gradient_pct, inte bara transparens.
 
-### CUDA OOM vid dubbel uppskalning (bekräftat)
+### CUDA OOM vid dubbel uppskalning ✅
 
-**Status:** Bekräftat mönster (2026-09-18)
+**Status:** Löst (2026-09-21)
 
-**Observation:** Två loggor under 0.15 MP failar konsekvent med 502 (CUDA OOM):
+**Problem:** Loggor under 0.15 MP failade med CUDA OOM vid dubbel uppskalning (4x→2x).
 
-| Logo | Original MP | Förväntad output | Status |
-|------|-------------|------------------|--------|
-| Hammarby | 0.100 | 6.4 MP (4x→2x) | ❌ OOM |
-| Tyresö | 0.147 | 9.4 MP (4x→2x) | ❌ OOM |
+**Fix:** Sänkte `max_pixels` i nod 20 till 1.25 MP → tvingar downscale mellan 4x och 2x.
 
-**Flöde för små loggor (<312k px):**
-```
-Original 0.1-0.15 MP → nod 17 (4x) → 1.6 MP → nod 21 (2x) → 6-9 MP
-```
-Ingen downscale triggas (båda under 2 MP-gränsen).
-
-**Slutsats:** Hypotes A bekräftad — två upscales i rad överbelastar GPU.
-
-**Fix (ej implementerad):** Sänk `max_pixels` i nod 20 (Check Resolution före 2x) till 1.25 MP.
-Detta tvingar en downscale mellan 4x och 2x, vilket ger GPU tid att frigöra minne.
+**Verifierat:**
+| Logo | Original | Output | Status |
+|------|----------|--------|--------|
+| Hammarby | 0.10 MP | 5.2 MP | ✅ |
+| Tyresö | 0.15 MP | 7.3 MP | ✅ |
 
 ### Chicago himmel-fix (2026-09-18) ✅
 
