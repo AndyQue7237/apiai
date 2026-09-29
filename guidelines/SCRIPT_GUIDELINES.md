@@ -142,7 +142,7 @@ terms on purpose — avoid "temperature / top-k / nucleus sampling" jargon.)
 ## 6. Available libraries (apiai.me runtime)
 
 Pre-installed — `import` freely: **`Pillow` (PIL), `numpy`, `opencv-python-headless`,
-`scipy`, `scikit-image`, `cairosvg`, `replicate`** + the stdlib (`os`, `io`, `json`,
+`scipy`, `scikit-image`, `cairosvg`, `replicate`, `pillow-heif`** + the stdlib (`os`, `io`, `json`,
 `base64`, `logging`, `urllib.request`, `urllib.error`, `ssl`, `argparse`, `tempfile`,
 `pathlib`, …).
 
@@ -154,8 +154,9 @@ instead of `sklearn.cluster.KMeans`. For color space conversion, use `skimage.co
 
 Anything outside the list must be replaced with a stdlib equivalent or added by a developer.
 
-**Server env vars:** `GEMINI_API_KEY`, `REPLICATE_API_TOKEN` (read via `os.environ`; never
-hardcode a key).
+**Server env vars:** `ANTHROPIC_API_KEY`, `GEMINI_API_KEY`, `OPENAI_API_KEY`,
+`REPLICATE_API_TOKEN`, `XAI_API_KEY` (read via `os.environ`; never hardcode a key).
+Package allowlist and env list as shown in the admin, 2026-09-29.
 
 **Always state a script's Requirements when you deliver it** — the pip packages to tick in
 the site's script settings. That's every import that is **not** stdlib, **not** runtime-

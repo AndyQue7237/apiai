@@ -20,3 +20,14 @@ scratch/
 # IDE
 .idea/
 .vscode/
+
+# Raw apiai.me exports contain live API keys; commit only *.sanitized.json
+docs/export/*.json
+!docs/export/*.sanitized.json
+
+# Session recordings: review (screenshots!) before committing
+docs/crawl/
+
+# Browser-saved admin pages contain customer PII and the admin JS; commit only docs/html/extracted/
+docs/html/*.html
+docs/html/*_files/

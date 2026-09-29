@@ -1,8 +1,56 @@
 # Session Memory — apiai
 
-Senast uppdaterad: 2026-09-18
+Senast uppdaterad: 2026-09-29
 
-## Aktuellt fokus
+> **NYTT FOKUS 2026-09-29: dokumentera apiai inför en ny produkt.** Läs
+> **[`docs/HANDOVER.md`](docs/HANDOVER.md)** först. Sessionen 2026-09-18 längre ner är historik.
+
+## Aktuellt fokus (2026-09-29): apiai-dokumentation — källorna är insamlade
+
+Enbart dokumentation (ingen Feature Brief för bygge än). Källorna är på plats och sanerade;
+nästa steg är att **skriva** dokumenten.
+
+### Vad vi gjorde (2026-09-29)
+
+1. **Export** (`docs/export/`): admin-exporten innehöll 5 live API-nycklar i klartext
+   (Replicate, Gemini, xAI, OpenAI). Råfilen är gitignorerad; bara
+   `*.sanitized.json` committas (`docs/tools/sanitize_export.py`). Överväg att rotera nycklarna.
+   Exporten saknar flödesparametrar (`step_config` tomma).
+2. **JSON-inspelning av admin** (`docs/tools/record_admin.py`, output `docs/crawl/admin/`,
+   gitignorerad): fångar all JSON admin laddar. Gav **`flow_config` med hela nodgrafen** för
+   26 flöden (Heja: 22 noder, prompts, villkor, `from_node`), 87 APIs med
+   `provider_cost_per_request`/`markup_pct`/`ai_context`, allowed-packages, available-env,
+   capacity, monitor. Kunddata (users, admins, usage per user, login) rensad till schema.
+3. **HTML-sparning av admin** (Andreas, `docs/html/*.html`, gitignorerad: PII + admin-JS) →
+   `docs/tools/extract_admin_html.py` → sanerad markdown per flik/modal i
+   `docs/html/extracted/` (formulär, fält, hjälptexter; ingen kod, ingen PII).
+
+### Beslut
+
+- **Viktiga flikar:** APIs, Pipelines, Scripts, Servers, Users, **Access Control (superviktigt)**,
+  Usage & Billing, Monitor. **Hoppa över:** Pricing (subs, ej lanserat), Blog, Landing Pages.
+- **Viktiga pipelines:** bara **Heja** och **AZ Design**. Publika mallar har lågt värde.
+  AZ exporterar Andreas manuellt senare (senaste versionen).
+- Ingen kunddata och inga nycklar i docs, någonsin.
+- **Scripten får sparas ordagrant med full kod** (Andreas byggt dem själv, se HANDOVER.md).
+
+### Nästa steg
+
+1. ✅ **`docs/ADMIN.md`** skriven (utkast): datamodell + alla viktiga flikar. Andreas granskar.
+   Källor: `docs/html/extracted/*.md` (hur) + `docs/crawl/admin/api/*.json` (vad).
+2. ✅ `docs/flows/HEJA.md` (bara skillnader), ✅ `docs/MODELS.md` + `models/CATALOG.md`, ✅ `docs/NODE_CONTRACT.md` + `scripts/` (46 script ordagrant). Kvar:
+   ✅ `docs/flows/AZ.md` (fyra pipelines, prompts ordagrant ur crawlen; ingen manuell export behövs).
+3. Valfritt: spara admin-HTML med Heja öppet i pipeline-editorn (nodeditorns UI).
+4. User-delen (icke-admin) ej crawlad än.
+
+### Scratch (gitignorerat, `docs/scratch/`)
+
+`inspect_export.py`, `gap_analysis.py`, `review_crawl.py`, `scrub_crawl_pii.py`,
+`inspect_saved_html.py` — analys-/rensningsverktyg från denna session.
+
+---
+
+## Tidigare fokus (2026-09-18, heja)
 
 **Chicago color fix verifierad + CUDA OOM-mönster bekräftat**
 
