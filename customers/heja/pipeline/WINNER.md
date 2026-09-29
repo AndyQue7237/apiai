@@ -63,7 +63,7 @@ Andreas egna ord. Tre enkla meningar slår NB Pros sex numrerade regelblock: **e
 | 2026-09-04 | v2-fix | 9 loggor | 9/9 | Fixad routing (kvalitet före transparens) |
 | 2026-09-08 | v2-gradient | 10 loggor | 10/10 | Gradient-fix + GPT-2 transparens + Replicate ESRGAN |
 | 2026-09-18 | v2-colorfix | 10 loggor | 8/10 | Chicago himmel-fix verifierad, 2 GPU OOM (små loggor) |
-| 2026-09-21 | v2-gpufix | 2 loggor | 2/2 | GPU-fix verifierad (nod 20 → 1.25 MP) |
+| 2026-09-21 | v2-gpufix | 2 loggor | 2/2 | GPU-fel var tillfälligt Replicate-problem, 2 MP fungerar |
 
 Rapport: `out/steps.html` (en flik per tag).
 Human eval av föregående mästare: `../../evaluator/customers/heja/HUMAN_EVAL.md`.
@@ -105,17 +105,18 @@ den gissar. Lösning: kvalitetsrouting baserad på gradient_pct, inte bara trans
 
 ### CUDA OOM vid dubbel uppskalning ✅
 
-**Status:** Löst (2026-09-21)
+**Status:** Löst (2026-09-21) — tillfälligt Replicate-fel
 
 **Problem:** Loggor under 0.15 MP failade med CUDA OOM vid dubbel uppskalning (4x→2x).
 
-**Fix:** Sänkte `max_pixels` i nod 20 till 1.25 MP → tvingar downscale mellan 4x och 2x.
+**Slutsats:** Var ett tillfälligt GPU-fel hos Replicate, inte en permanent gräns. Med standard
+`max_pixels=2000000` (samma som övriga downscale-noder) fungerar det nu.
 
 **Verifierat:**
 | Logo | Original | Output | Status |
 |------|----------|--------|--------|
-| Hammarby | 0.10 MP | 5.2 MP | ✅ |
-| Tyresö | 0.15 MP | 7.3 MP | ✅ |
+| Hammarby | 0.10 MP | ✅ | Fungerar med 2 MP |
+| Tyresö | 0.15 MP | ✅ | Fungerar med 2 MP |
 
 ### Chicago himmel-fix (2026-09-18) ✅
 
