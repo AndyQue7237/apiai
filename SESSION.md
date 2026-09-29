@@ -42,8 +42,13 @@ nästa steg är att **skriva** dokumenten.
    Källor: `docs/html/extracted/*.md` (hur) + `docs/crawl/admin/api/*.json` (vad).
 2. ✅ `docs/flows/HEJA.md` (bara skillnader), ✅ `docs/MODELS.md` + `models/CATALOG.md`, ✅ `docs/NODE_CONTRACT.md` + `scripts/` (46 script ordagrant). Kvar:
    ✅ `docs/flows/AZ.md` (fyra pipelines, prompts ordagrant ur crawlen; ingen manuell export behövs).
-3. Valfritt: spara admin-HTML med Heja öppet i pipeline-editorn (nodeditorns UI).
-4. User-delen (icke-admin) ej crawlad än.
+3. ✅ Pipeline-byggaren dokumenterad, admin (`ADMIN.md` 7.3) och user (`USER.md` 5.1).
+4. ✅ User-delen: `docs/USER.md` (crawl `docs/crawl/user/`, gitignorerad, PII rensad).
+
+**Steg 1 (dokumentation) är klart.** Kvar:
+- Andreas roterar providernycklarna (Replicate, Gemini, xAI, OpenAI).
+- Andreas lägger in `autoMode.allow`-regeln i `.claude/settings.local.json` (se konversation).
+- **Steg 2: planera den nya produkten**, med `docs/` som underlag (börja i Explore-fasen).
 
 ### Scratch (gitignorerat, `docs/scratch/`)
 
