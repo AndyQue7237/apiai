@@ -297,6 +297,44 @@ A condition node passes the image through: the next node wires `from_node` to th
 The *Original* binding (compare against the source image after generation) is what makes e.g.
 Heja's color correction possible.
 
+### 7.3 The pipeline builder (admin)
+
+Source: an admin page saved with an existing pipeline open in *Edit Pipeline* (2026-09-29).
+
+**Left: Available Workflows.** A search field (*Search workflows…*), then **Gate** and
+**Condition** at the top, followed by every API in alphabetical order. Clicking `+` appends it
+as a node.
+
+**Right: Pipeline Nodes (n).** One card per node, numbered, with:
+
+- **▲ / ▼** to reorder and **✕** to remove.
+- A **parameter table** (*Parameter · Mode · Value / Options*), one row per API parameter:
+  - **Mode** is a dropdown. The choices depend on the parameter and the position:
+
+    | Choice | Offered when |
+    |---|---|
+    | Expose | Always. Has a **req** checkbox (required in the pipeline's public API). |
+    | Fixed | Always. The value field is a **dropdown** when the API declares allowed values (e.g. `image_size`: 1K / 2K / 4K), otherwise a free-text box. |
+    | Wire ← prev | From node 2 onwards. Shows the source, e.g. `← node_1`. |
+    | Use original ↑ | Only for image parameters. The pipeline's original input image. |
+    | Default | Always. The API's own default applies. |
+    | Omit | Always. The parameter is not sent. |
+
+  - The API's parameter description is shown under the row (e.g. *"target format: png,
+    jpeg, webp, bmp (default: webp)"*).
+- **Stop pipeline after this step** (checkbox): stored as `stop_after: true`. It ends a
+  branch, as in Heja node 10 and AZ mask-checker.
+- **Failover workflow (used if primary fails)** (dropdown with every API): an alternative API
+  that runs if this node fails. **Not used in any of the 27 pipelines** (no failover key in
+  any `flow_config`), but the platform supports it.
+
+Gate and condition nodes have their own fields (7.1); a gate is configured with its YES/NO
+question and messages, a condition with field, value and skip count.
+
+**Lesson for a new product:** a per-node failover is the platform-level form of lesson 2 in
+`CLAUDE.md` ("fallbacks always"). It existed but was never wired up; the Heja and AZ
+pipelines relied on single providers.
+
 Heja and AZ flows: see `docs/flows/HEJA.md` and `docs/flows/AZ.md`.
 
 ---
@@ -351,9 +389,8 @@ rejects AVIF (415). **Lesson:** normalize the image format before the first prov
 
 ## 10. Open questions
 
-- **The pipeline editor UI** (the node list, how a binding is chosen) is only visible with a
-  flow open. The data is documented (7.1–7.2); the editor itself is not saved.
-- **The user part** (regular login: dashboard, My Pipelines, API keys) has not been crawled.
+- **The user-side pipeline builder** is documented in [`USER.md`](USER.md) 5.1: no Condition
+  node, no Failover, no Use original, customer-friendly labels, 30-node limit.
 - **The Pricing tab** (subscriptions, *What if?*) is deliberately left out: not launched.
-- **The eval platform** (eval.apiai.me) and **batch** exist only in the public docs.
+- **The eval platform** (eval.apiai.me) exists only in the public docs.
 - **Provider costs** were never recorded; the margin per API is unknown.
