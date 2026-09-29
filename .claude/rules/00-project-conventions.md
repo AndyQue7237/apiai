@@ -14,7 +14,12 @@ This ensures continuity between sessions and that changes fit existing patterns 
 
 - **All code** (variable names, functions, docstrings, log messages) must be in **English**.
 - **All comments** must be in **English**.
-- User-facing docs (e.g. README) can follow the project (Swedish or English as used in the repo).
+- **All documentation** must be in **English**: `docs/`, `guidelines/`, READMEs, WINNER.md and
+  setup docs. It will be read by people beyond this project (a new product, future collaborators),
+  and it quotes English code, params and prompts anyway.
+- **Conversation** with Andreas is in **Swedish**. `SESSION.md` working notes may stay Swedish.
+- Existing Swedish docs are translated to English when they are substantially edited.
+  (Decided 2026-09-29.)
 
 ## Building scripts / pipeline nodes (apiai.me)
 

@@ -1,38 +1,39 @@
-<!-- MODELS — vilka modeller apiai.me hade inkopplade, hur de användes och vad vi lärt oss. Skriven 2026-09-29 ur admin-data; detaljer per API i models/CATALOG.md (genererad). -->
+<!-- MODELS — which models apiai.me had connected, how they were used and what we learned. Written 2026-09-29 from admin data; per-API details in models/CATALOG.md (generated). -->
 
-# Modeller på apiai.me
+# Models on apiai.me
 
-Vilka modeller plattformen hade inkopplade 2026-09-29, vilka som faktiskt användes och vad
-det lär oss inför en ny produkt.
+Which models the platform had connected on 2026-09-29, which were actually used, and what
+that teaches us for a new product.
 
-- **Detaljer per API** (modell-ID, pris, konfiguration, alla parametrar, AI context):
-  [`models/CATALOG.md`](models/CATALOG.md), genererad med `docs/tools/build_models_catalog.py`.
-- **Hur man väljer modell:** `guidelines/MODEL_SELECTION_GUIDELINES.md` (typ först, ranking
-  sen, eget eval avgör).
-- **Hur en modell kopplas in i admin:** `ADMIN.md` avsnitt 4–5.
+- **Per-API details** (model ID, price, configuration, all parameters, AI context):
+  [`models/CATALOG.md`](models/CATALOG.md), generated with `docs/tools/build_models_catalog.py`.
+- **How to choose a model:** `guidelines/MODEL_SELECTION_GUIDELINES.md` (type first, ranking
+  second, your own eval decides).
+- **How a model is connected in the admin:** `ADMIN.md` sections 4–5.
 
 ---
 
 ## 1. Providers
 
-| Provider | Anslutning | API:er | Används till |
+| Provider | Connection | APIs | Used for |
 |---|---|---|---|
-| **Replicate** | `api_key`, katalogsök + *Fetch Schema* | 24 | Bakgrundsborttagning, uppskalning, vektorisering, segmentering, video, bildgenerering |
-| **Gemini** | `…/v1beta` | 11 | Nano Banana-familjen (bild), Veo (video), Flash Lite (vision → text) |
-| **OpenAI** | `…/v1` | 7 | GPT Image 1.5 / 2 (bildredigering), GPT-4o-familjen (vision → text) |
+| **Replicate** | `api_key`, catalog search + *Fetch Schema* | 24 | Background removal, upscaling, vectorization, segmentation, video, image generation |
+| **Gemini** | `…/v1beta` | 11 | The Nano Banana family (image), Veo (video), Flash Lite (vision → text) |
+| **OpenAI** | `…/v1` | 7 | GPT Image 1.5 / 2 (image editing), the GPT-4o family (vision → text) |
 | **xAI** | `…/v1` | 1 | Grok 3 mini (text) |
-| **Python (lokal)** | — | 44 | Egna script. Några anropar modeller själva (se 3). |
+| **Python (local)** | — | 44 | Our own scripts. Some call models themselves (see 3). |
 
-Replicate är bredden: nästan allt som inte är Gemini eller OpenAI går dit, och en ny modell
-kopplas in utan kod (sök → *Fetch Schema* → parametrarna mappas automatiskt).
+Replicate provides the breadth: almost everything that isn't Gemini or OpenAI goes there, and
+a new model is connected without code (search → *Fetch Schema* → the parameters are mapped
+automatically).
 
 ---
 
-## 2. Vad som faktiskt användes
+## 2. What was actually used
 
-Anrop 2026-08-31 till 2026-09-29. Bara modell-API:er; pipelines räknas separat.
+Requests 2026-08-31 to 2026-09-29. Model APIs only; pipelines are counted separately.
 
-| API | Modell | Anrop | Pris/anrop |
+| API | Model | Requests | Price/request |
 |---|---|---|---|
 | Nano Banana 2 | `gemini-3.1-flash-image-preview` | **4 896** | $0.05 |
 | Gemini 3.1 Flash Lite Preview | `gemini-3.1-flash-lite-preview` | **1 180** | $0.04 |
@@ -41,72 +42,72 @@ Anrop 2026-08-31 till 2026-09-29. Bara modell-API:er; pipelines räknas separat.
 | Bria Remove Background | `bria/remove-background` | 18 | $0.02 |
 | Nano Banana Pro | `gemini-3-pro-image-preview` | 14 | $0.15 |
 
-**Slutsats:** två modeller stod för nästan all trafik: Nano Banana 2 (bild) och Gemini Flash
-Lite (vision → text). Av 43 modell-API:er hade **23 inga anrop alls** under perioden. Katalogen
-är bred för att visa upp plattformen; den faktiska användningen är smal.
+**Conclusion:** two models accounted for almost all traffic: Nano Banana 2 (image) and Gemini
+Flash Lite (vision → text). Of 43 model APIs, **23 had no requests at all** during the period.
+The catalog is broad to showcase the platform; actual usage is narrow.
 
 ---
 
-## 3. Modeller i de viktiga flödena
+## 3. Models in the important flows
 
 ### Heja Team Emblem
 
-| Steg | Modell | Via |
+| Step | Model | Via |
 |---|---|---|
-| Hitta och croppa loggan | `lucataco/florence-2-large` | Scriptet `detect_and_crop` (Replicate-biblioteket) |
-| Ta bort bakgrund, förbättra | `gpt-image-2` (quality medium, background transparent) | API `openai-gpt-image-2` |
-| Croppa referensen för färgkorrigering | `lucataco/florence-2-large` | Scriptet `correct_colors` |
-| Uppskalning | `nightmareai/real-esrgan` (4× och 2×) | API `real-esrgan` |
+| Find and crop the logo | `lucataco/florence-2-large` | The `detect_and_crop` script (the Replicate library) |
+| Remove background, enhance | `gpt-image-2` (quality medium, background transparent) | API `openai-gpt-image-2` |
+| Crop the reference for color correction | `lucataco/florence-2-large` | The `correct_colors` script |
+| Upscaling | `nightmareai/real-esrgan` (4× and 2×) | API `real-esrgan` |
 
-Allt annat i flödet är egna script utan modell. Se `flows/HEJA.md`.
+Everything else in the flow is our own scripts without a model. See `flows/HEJA.md`.
 
 ### AZ Design
 
-| Flöde | Modell | Via |
+| Flow | Model | Via |
 |---|---|---|
-| AZ Change Fabric - Mask | `gemini-3-pro-image-preview` | API `nano-banana-pro-inpainting` (scriptet `nb_pro_inpaint`, anropar Gemini direkt) |
-| AZ Change Colour of Chair (med/utan tyg), Change Colour of Fabric | `gemini-3-pro-image-preview` | API `nano-banana-pro` |
-| AZ Smooth mask … (Sam3), Smooth Mask Creator Fabric | `mattsays/sam3-image` → scriptet `smooth_mask` (→ `mask_checker`) | API `sam3-image` |
+| AZ Change Fabric - Mask | `gemini-3-pro-image-preview` | API `nano-banana-pro-inpainting` (the `nb_pro_inpaint` script, calls Gemini directly) |
+| AZ Change Colour of Chair (with/without fabric), Change Colour of Fabric | `gemini-3-pro-image-preview` | API `nano-banana-pro` |
+| AZ Smooth mask … (Sam3), Smooth Mask Creator Fabric | `mattsays/sam3-image` → the `smooth_mask` script (→ `mask_checker`) | API `sam3-image` |
 
-AZ-flödena dokumenteras i detalj när Andreas manuella export finns.
+The AZ flows are documented in detail in `flows/AZ.md`.
 
-### Modeller som script anropar direkt
+### Models that scripts call directly
 
-Dessa syns inte som modell-API:er, eftersom anropet sker inne i scriptet:
+These don't appear as model APIs, because the call happens inside the script:
 
-| Script | Modell |
+| Script | Model |
 |---|---|
-| `detect_and_crop`, `correct_colors` | `lucataco/florence-2-large` (Replicate, fast version-hash) |
-| `Detect and Remove Background` | `adirik/grounding-dino` (Replicate, fast version-hash) |
-| `nb_pro_inpaint`, `nb_pro_reference_image` | `gemini-3-pro-image-preview` (Gemini direkt, `GEMINI_API_KEY`) |
+| `detect_and_crop`, `correct_colors` | `lucataco/florence-2-large` (Replicate, pinned version hash) |
+| `Detect and Remove Background` | `adirik/grounding-dino` (Replicate, pinned version hash) |
+| `nb_pro_inpaint`, `nb_pro_reference_image` | `gemini-3-pro-image-preview` (Gemini directly, `GEMINI_API_KEY`) |
 
-Ett script som anropar en modell själv kan göra saker ett API inte kan: skicka mask och
-referensbild i samma anrop, välja modellversion via hash, eller ha fallback-logik.
-**Nackdel:** modellen syns inte i katalogen, och kostnaden bokförs inte per modell.
+A script that calls a model itself can do things an API can't: send a mask and a reference
+image in the same request, choose the model version via hash, or have fallback logic.
+**Downside:** the model doesn't show up in the catalog, and the cost isn't recorded per model.
 
 ---
 
-## 4. Lärdomar
+## 4. Learnings
 
-1. **Prompten hör hemma i flödet, inte i modellen.** Ingen modell-API har en inbakad prompt;
-   alla prompts sitter som *Fixed*-parameter på noden i pipelinen. Samma modell-API återanvänds
-   då av många flöden. Undantag: kundspecifika API:er som `Nano Banana pro - repholstring`.
-2. **Providerkostnaden registrerades aldrig** (0 av 87 API:er). Priset till kund sattes per
-   API, men marginalen är okänd. En ny produkt bör logga providerns faktiska kostnad per anrop
-   från start.
-3. **AI context är värdefull men opålitlig.** Texterna (44 API:er) innehåller verkliga
-   lärdomar om parametrar och egenheter, men är ofta AI-genererade och innehåller fel. Exempel:
-   för GPT Image 2 står det "$0.22 flat rate", men priset är $0.04. Använd dem som ledtrådar.
-4. **Hälsokontrollen täcker under hälften av modell-API:erna.** 16 av 43 verifierade, 3 failed
-   (Flux Fill Pro, runwayml gen-4.5, Grounding Dino), 22 aldrig testade, 2 inaktiva. Inget
-   video-API testades; en probe med riktig inferens är dyr för video **(tolkning)**.
-5. **Fasta modellversioner i script.** Scripten pekar på exakta Replicate-versionshashar. Det
-   gör resultaten reproducerbara, men uppgraderingar måste göras för hand.
-6. **Konfigurationsfel överlever.** `sam3-image` och `check-resolution` har
-   `response_type: video` fast de returnerar bilder, och `real-esrgan` har två parametrar som
-   hör till ett annat verktyg. Plattformen tålde det, men en ny produkt bör validera
-   I/O-typer mot modellens schema.
-7. **Replicate för bredd, direktanrop för det viktiga.** Heja anropar GPT Image 2 och
-   Real-ESRGAN direkt i den lokala versionen för att slippa apiai.me:s kö
-   (CLAUDE.md, lärdom 5). Plattformens samtidighetsgräns (8 totalt / 4 per användare) är
-   flaskhalsen, inte providerna.
+1. **The prompt belongs in the flow, not in the model.** No model API has a baked-in prompt;
+   all prompts sit as a *Fixed* parameter on the node in the pipeline. The same model API is
+   then reused by many flows. Exception: customer-specific APIs such as `Nano Banana pro - repholstring`.
+2. **Provider cost was never recorded** (0 of 87 APIs). The customer price was set per API,
+   but the margin is unknown. A new product should log the provider's actual cost per request
+   from the start.
+3. **AI context is valuable but unreliable.** The texts (44 APIs) contain real learnings
+   about parameters and quirks, but are often AI-generated and contain errors. Example: for
+   GPT Image 2 it says "$0.22 flat rate", but the price is $0.04. Use them as hints.
+4. **The health check covers less than half of the model APIs.** 16 of 43 verified, 3 failed
+   (Flux Fill Pro, runwayml gen-4.5, Grounding Dino), 22 never tested, 2 inactive. No video
+   API was tested; a probe with real inference is expensive for video **(interpretation)**.
+5. **Pinned model versions in scripts.** The scripts point to exact Replicate version hashes.
+   That makes results reproducible, but upgrades have to be done by hand.
+6. **Configuration errors survive.** `sam3-image` and `check-resolution` have
+   `response_type: video` even though they return images, and `real-esrgan` has two
+   parameters that belong to another tool. The platform tolerated it, but a new product should
+   validate I/O types against the model's schema.
+7. **Replicate for breadth, direct calls for what matters.** Heja calls GPT Image 2 and
+   Real-ESRGAN directly in the local version to avoid apiai.me's queue
+   (CLAUDE.md, learning 5). The platform's concurrency limit (8 total / 4 per user) is the
+   bottleneck, not the providers.

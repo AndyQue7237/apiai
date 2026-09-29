@@ -1,9 +1,9 @@
-<!-- export — här lägger Andreas exporten av verktyg och script ur apiai.me admin (2026-09-29). -->
+<!-- export — this is where Andreas places the export of tools and scripts from the apiai.me admin (2026-09-29). -->
 
-# Export från apiai.me
+# Export from apiai.me
 
-Lägg exporten av verktyg och script här, exakt som den kom ut. Ändra ingenting i råfilerna:
-dokumentationen i `docs/` skrivs UR dem, så de är källan.
+Place the export of tools and scripts here, exactly as it came out. Change nothing in the raw files:
+the documentation in `docs/` is written FROM them, so they are the source.
 
-⚠️ **Kontrollera att exporten saknar API-nycklar och tokens innan commit.** Den här mappen
-versionshanteras, och git glömmer aldrig.
+⚠️ **Check that the export contains no API keys or tokens before committing.** This folder
+is version-controlled, and git never forgets.

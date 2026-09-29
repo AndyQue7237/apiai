@@ -1,81 +1,82 @@
-<!-- HANDOVER — överlämning från en carpx-session 2026-09-29: varför docs/ finns, vad som hittats och var arbetet står. Läs först. -->
+<!-- HANDOVER — handover from a carpx session on 2026-09-29: why docs/ exists, what was found and where the work stands. Read first. -->
 
-# Överlämning: dokumentera apiai inför en ny produkt
+# Handover: documenting apiai ahead of a new product
 
-**Skriven 2026-09-29** ur en session som av misstag kördes i carpx-mappen (session
-`275ff0b0`, 11:15–11:28). Inget av det nedan fanns sparat någon annanstans.
+**Written 2026-09-29** from a session that was accidentally run in the carpx folder (session
+`275ff0b0`, 11:15–11:28). None of the below was saved anywhere else.
 
-## Uppdraget (Andreas, ordagrant i sak)
+## The assignment (Andreas, verbatim in substance)
 
-Andreas och utvecklaren går skilda vägar. **Utvecklaren behåller koden och IP:n**; Andreas
-bygger en ny produkt, annorlunda och mer anpassad för content, men på samma princip: att
-kedja modeller och script. Backend kommer att saknas.
+Andreas and the developer are parting ways. **The developer keeps the code and the IP**; Andreas
+is building a new product, different and more tailored for content, but on the same principle:
+chaining models and scripts. The backend will be missing.
 
-- **Steg 1:** dokumentera så mycket som möjligt av script, modeller och admin.
-- **Steg 2:** planera den nya produkten. Den finns inte än.
+- **Step 1:** document as much as possible of the scripts, models and admin.
+- **Step 2:** plan the new product. It does not exist yet.
 
-Arbetet börjar med **Explore** här i apiai-repot.
+The work starts with **Explore** here in the apiai repo.
 
-**Gränsen vi drog:** dokumentera **principer, beslut och mätningar** (modellval och varför,
-förkastade spår med underlag, promptstrategier, kostnader, kedjornas logik). Det är både
-oproblematiskt och mer värt för en ny produkt med annan layout än en avskrift av hans
-implementation. Är något tveksamt: stäm av med honom först.
+**The boundary we drew:** document **principles, decisions and measurements** (model choices and why,
+rejected approaches with evidence, prompt strategies, costs, the logic of the chains). That is both
+unproblematic and more valuable for a new product with a different layout than a transcript of his
+implementation. If anything is unclear: check with him first.
 
-**Undantag: scripten (beslut av Andreas 2026-09-29).** Merparten av Python-scripten/noderna
-har Andreas själv byggt, lokalt i detta repo innan de publicerades på sajten. **Alla** script
-i exporten får sparas **ordagrant med full källkod**, inte bara som principer. Det
-utvecklaren behåller är **plattformskoden i hans git-repo** (backend, admin, sajten), som
-Andreas inte har tillgång till. Gränsen ovan gäller den koden, inte scripten.
+**Exception: the scripts (decision by Andreas 2026-09-29).** Most of the Python scripts/nodes
+were built by Andreas himself, locally in this repo before they were published on the site. **All** scripts
+in the export may be saved **verbatim with full source code**, not just as principles. What
+the developer keeps is **the platform code in his git repo** (backend, admin, the site), which
+Andreas does not have access to. The boundary above applies to that code, not to the scripts.
 
-## Svar från Andreas på fyra frågor
+## Andreas' answers to four questions
 
-1. **När upphör åtkomsten till apiai.me?** Inget datum satt, men gör jobbet nu ändå.
-2. **Finns en export?** Ja, av verktyg och script, precis exporterad. Läggs i
-   **`docs/export/`**. Dessutom finns publik dokumentation på https://apiai.me/docs, som
-   sammanfattas i [`public-docs-summary.md`](public-docs-summary.md).
-3. **Var ligger crawlern?** I `~/projects/tools/mockups/` (se nedan). **Den inloggade
-   admin-delen är viktigast.**
-4. **Vad är den nya produkten?** Finns inte än.
+1. **When does access to apiai.me end?** No date set, but do the work now anyway.
+2. **Is there an export?** Yes, of tools and scripts, just exported. Placed in
+   **`docs/export/`**. There is also public documentation at https://apiai.me/docs, which
+   is summarized in [`public-docs-summary.md`](public-docs-summary.md).
+3. **Where is the crawler?** In `~/projects/tools/mockups/` (see below). **The logged-in
+   admin part matters most.**
+4. **What is the new product?** It does not exist yet.
 
-**Obesvarat när sessionen bröts:** *"Finns två inloggade delar. 1 som vanlig user.
-2 apiai/admin (separat inlogg)."* Båda behöver alltså crawlas, med var sin inloggning.
+**Unanswered when the session ended:** *"Finns två inloggade delar. 1 som vanlig user.
+2 apiai/admin (separat inlogg)."* ("There are two logged-in parts. 1 as a regular user.
+2 apiai/admin (separate login).") So both need to be crawled, each with its own login.
 
-## Vad som redan finns
+## What already exists
 
-| Repo | Innehåll |
+| Repo | Contents |
 |---|---|
-| **`apiai/`** (detta) | `guidelines/`: 1 002 rader i fem dokument (SCRIPT, PIPELINE, PROMPT, MODEL_SELECTION, EVAL) · `customers/` az-design, heja, shl · 21 python-noder i `scripts/` |
-| **`tools/`** | `evaluator/` (batch-eval), `image-tools/`, tre carpx-pipelines, `mockups/apiai/` med dashboard-mockup |
-| **`carpx/`** | `APIAI_FLOWS.md` (361 rader), `STUDIO_PIPELINE.md`, WINNER-filer, evalharnesser |
+| **`apiai/`** (this one) | `guidelines/`: 1,002 lines in five documents (SCRIPT, PIPELINE, PROMPT, MODEL_SELECTION, EVAL) · `customers/` az-design, heja, shl · 21 Python nodes in `scripts/` |
+| **`tools/`** | `evaluator/` (batch eval), `image-tools/`, three carpx pipelines, `mockups/apiai/` with a dashboard mockup |
+| **`carpx/`** | `APIAI_FLOWS.md` (361 lines), `STUDIO_PIPELINE.md`, WINNER files, eval harnesses |
 
-Alla tre ligger på Andreas konto (`AndyQue7237`). Det som försvinner är **plattformen bakom
-apiai.me**, inte repona.
+All three are on Andreas' account (`AndyQue7237`). What disappears is **the platform behind
+apiai.me**, not the repos.
 
-**Uppgiften är därför främst att konsolidera och göra portabelt, inte att skriva från noll.**
-`carpx/APIAI_FLOWS.md` är mallen: *"skriven ur den körande koden, inte ur minnet"*, med
-promptarna ordagrant och parametrarna exakta.
+**The task is therefore mainly to consolidate and make things portable, not to write from scratch.**
+`carpx/APIAI_FLOWS.md` is the template: *"written from the running code, not from memory"*, with
+the prompts verbatim and the parameters exact.
 
-**Crawlern:** `tools/mockups/apiai/download.py`, skriven av Andreas. Den har `--login` för
-autentiserade sidor, sanerar API-nycklar och tar bort auth-redirects så att sidan fungerar
-lokalt. Det är verktyget för admin-delen. `dashboard-mockup/` är en tidigare nedladdning,
-och det var inte fastställt om den är admin eller den publika sidan.
+**The crawler:** `tools/mockups/apiai/download.py`, written by Andreas. It has `--login` for
+authenticated pages, sanitizes API keys and removes auth redirects so the page works
+locally. It is the tool for the admin part. `dashboard-mockup/` is an earlier download,
+and it was not established whether it is the admin or the public page.
 
-## Prioritering: efter vad som försvinner, inte efter vikt
+## Prioritization: by what disappears, not by importance
 
-Det som ligger i repona kan dokumenteras när som helst. Det som bara finns **inne i
-plattformen** går först:
+What lives in the repos can be documented at any time. What exists only **inside the
+platform** goes first:
 
-1. **Flödesdefinitionerna**: noder, ordning, parametrar. `APIAI_FLOWS.md` täcker carpx fyra
-   flöden. **Az-design, heja och shl saknar motsvarande.**
-2. **Vilka modeller som är inkopplade** och under vilka namn.
-3. **Nodkontraktet**: hur ett script blir en nod.
-4. **Faktiska kostnader** per modell (kom i `X-Cost`-headern).
-5. **Admin**: hur ett flöde faktiskt byggs. Både user-delen och `apiai/admin`.
+1. **The flow definitions**: nodes, order, parameters. `APIAI_FLOWS.md` covers carpx's four
+   flows. **Az-design, heja and shl have no equivalent.**
+2. **Which models are connected** and under which names.
+3. **The node contract**: how a script becomes a node.
+4. **Actual costs** per model (came in the `X-Cost` header).
+5. **Admin**: how a flow is actually built. Both the user part and `apiai/admin`.
 
-## Nästa steg
+## Next steps
 
-1. Andreas lägger exporten i `docs/export/`. **Kontrollera att den saknar nycklar före commit.**
-2. Läs exporten och `public-docs-summary.md`, och jämför med `guidelines/` och `scripts/`:
-   vad är redan täckt, vad saknas?
-3. Crawla båda inloggade delarna med `download.py --login`.
-4. Föreslå en struktur för `docs/` och skriv en Feature Brief för dokumentationsarbetet.
+1. Andreas places the export in `docs/export/`. **Check that it contains no keys before committing.**
+2. Read the export and `public-docs-summary.md`, and compare with `guidelines/` and `scripts/`:
+   what is already covered, what is missing?
+3. Crawl both logged-in parts with `download.py --login`.
+4. Propose a structure for `docs/` and write a Feature Brief for the documentation work.

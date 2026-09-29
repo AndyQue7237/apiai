@@ -1,146 +1,147 @@
-<!-- ADMIN — hur apiai.me:s admin fungerar: datamodell, flik för flik. Skriven 2026-09-29 ur admin-HTML (docs/html/extracted/) och admin-API:t (inspelning), inte ur minnet. -->
+<!-- ADMIN — how the apiai.me admin works: data model, tab by tab. Written 2026-09-29 from the admin HTML (docs/html/extracted/) and the admin API (recording), not from memory. -->
 
-# apiai.me Admin: så fungerar det
+# apiai.me Admin: how it works
 
-Dokumenterar **hur** admin-delen av apiai.me fungerar: vilka begrepp som finns, hur de hänger
-ihop och vad varje fält gör. Syftet är att en ny produkt ska kunna bygga samma sak, eller
-medvetet göra annorlunda, utan tillgång till plattformen.
+Documents **how** the admin part of apiai.me works: which concepts exist, how they relate,
+and what each field does. The goal is that a new product can build the same thing, or
+deliberately do it differently, without access to the platform.
 
-**Källor** (2026-09-29):
-- `docs/html/extracted/*.md`: formulär, fält och hjälptexter ur den sparade Admin Console.
-- Admin-API:t (`/admin/api/*`), inspelat med `docs/tools/record_admin.py`: datamodell,
-  enum-värden och antal. Råinspelningen är lokal och gitignorerad.
-- `docs/public-docs-summary.md`: den publika API-dokumentationen (sammanfattad).
+**Sources** (2026-09-29):
+- `docs/html/extracted/*.md`: forms, fields and help texts from the saved Admin Console.
+- The admin API (`/admin/api/*`), recorded with `docs/tools/record_admin.py`: data model,
+  enum values and counts. The raw recording is local and gitignored.
+- `docs/public-docs-summary.md`: the public API documentation (summarized).
 
-Ingen kunddata och inga nycklar finns här. Påståenden som är slutsatser snarare än avläsningar
-är markerade **(tolkning)**.
+No customer data and no keys are included here. Statements that are conclusions rather than
+direct readings are marked **(interpretation)**.
 
 ---
 
-## 1. Datamodell i en bild
+## 1. Data model at a glance
 
 ```
-Server ──< API (workflow) >── Pipeline (flow) ── nod ── nod ── nod …
+Server ──< API (workflow) >── Pipeline (flow) ── node ── node ── node …
   │           │
-  │           └── Script  (när servern är "Python (Local)")
+  │           └── Script  (when the server is "Python (Local)")
   │
-  └── credentials (API-nyckel per provider)
+  └── credentials (API key per provider)
 
 User ──> Org (team)          Access: Global │ Per user │ Per team
-Admin user (separat inlogg, TOTP)
+Admin user (separate login, TOTP)
 ```
 
-| Begrepp | I UI | I API/data | Vad det är |
+| Concept | In UI | In API/data | What it is |
 |---|---|---|---|
-| **Server** | Servers | `servers` | En provider-anslutning: typ, URL, nyckel. 7 st. |
-| **API** | APIs | `workflows` | Ett anropbart verktyg: en modell *eller* ett script bakom en server. 87 st. Publik endpoint `/api/process/{slug}`. |
-| **Script** | Scripts | `scripts` | Python-källkod som körs av Python-servern. 46 st. Blir anropbart först när en API pekar på det. |
-| **Pipeline** | Pipelines | `flows` | En kedja av API:er (noder), med villkor och grindar. 27 st. Publik endpoint `/api/pipeline/{slug}`. |
-| **User** | Users | `users` | Kund med saldo och API-nyckel. Kan tillhöra en org. |
-| **Org** | (Team) | `orgs` | Team; medlemmar delar pipeline-åtkomst och saldo. |
-| **Admin user** | Users → Admin Users | `admin-users` | Separat konto för admin, med TOTP. |
+| **Server** | Servers | `servers` | A provider connection: type, URL, key. 7 in total. |
+| **API** | APIs | `workflows` | A callable tool: a model *or* a script behind a server. 87 in total. Public endpoint `/api/process/{slug}`. |
+| **Script** | Scripts | `scripts` | Python source code run by the Python server. 46 in total. Only becomes callable once an API points to it. |
+| **Pipeline** | Pipelines | `flows` | A chain of APIs (nodes), with conditions and gates. 27 in total. Public endpoint `/api/pipeline/{slug}`. |
+| **User** | Users | `users` | Customer with a balance and an API key. Can belong to an org. |
+| **Org** | (Team) | `orgs` | Team; members share pipeline access and balance. |
+| **Admin user** | Users → Admin Users | `admin-users` | Separate admin account, with TOTP. |
 
-Namnen skiljer sig mellan UI och data: **API = workflow** och **Pipeline = flow**. Detta
-kommer från plattformens ursprung som ComfyUI-backend (exportfilen heter `comfyui-b2b-export`
-och API-formuläret har fortfarande ett fält för "Workflow JSON (ComfyUI API format)").
+The names differ between UI and data: **API = workflow** and **Pipeline = flow**. This comes
+from the platform's origin as a ComfyUI backend (the export file is called `comfyui-b2b-export`
+and the API form still has a field for "Workflow JSON (ComfyUI API format)").
 
 ---
 
 ## 2. Access Control ⭐
 
-Styr **vilka API:er och pipelines en användare får anropa**. Tre nivåer, som adderas:
+Controls **which APIs and pipelines a user may call**. Three levels, which add up:
 
-| Nivå | Gäller | Kan ge | Hur |
+| Level | Applies to | Can grant | How |
 |---|---|---|---|
-| **Global Access** | *Alla* registrerade användare, automatiskt | API:er och pipelines | Sök, markera, "Grant Selected to All Users". |
-| **Per-User Access** | En användare | API:er och pipelines | Välj användare → markera → "Grant Selected". *"In addition to any global access."* |
-| **Team Access** | En hel org | **Endast pipelines** | Välj team → markera → "Grant Selected". *"All current and future members automatically inherit access."* |
+| **Global Access** | *All* registered users, automatically | APIs and pipelines | Search, select, "Grant Selected to All Users". |
+| **Per-User Access** | One user | APIs and pipelines | Choose user → select → "Grant Selected". *"In addition to any global access."* |
+| **Team Access** | A whole org | **Pipelines only** | Choose team → select → "Grant Selected". *"All current and future members automatically inherit access."* |
 
-Läget 2026-09-29: **73 API:er och 1 pipeline** var globalt tillgängliga (av 87 resp. 27).
-Varje tilldelning har en tidsstämpel (`granted_at`).
+Status 2026-09-29: **73 APIs and 1 pipeline** were globally available (of 87 and 27
+respectively). Every grant has a timestamp (`granted_at`).
 
-**Regler som går att läsa ut:**
-- **Templates kräver global åtkomst.** En pipeline markerad *Template* erbjuds som startpunkt i
-  varje användares *My Pipelines*, där de kan kopiera och redigera en egen version. *"Templates
-  may only use tools that are granted globally — saving tells you which ones are missing."*
-  Alltså valideras det vid sparning.
-- **Copyable** är en separat flagga på pipelinen: om användare får kopiera den.
-- **Kundspecifika pipelines** (Heja, AZ, Widforss …) ges via Team Access eller Per-User,
-  inte globalt **(tolkning:** bara 1 pipeline är global, och kundflödena är inte templates).
-- **Teamroller** (ur publika docs): *Owner* (allt), *Developer* (API + Dashboard), *Designer*
-  (bara Dashboard). **Delad fakturering:** ägarens saldo täcker alla medlemmar. Rollen ligger
-  på användaren (`org_role`).
+**Rules that can be read out:**
+- **Templates require global access.** A pipeline marked *Template* is offered as a starting
+  point in every user's *My Pipelines*, where they can copy it and edit their own version.
+  *"Templates may only use tools that are granted globally — saving tells you which ones are
+  missing."* So this is validated on save.
+- **Copyable** is a separate flag on the pipeline: whether users may copy it.
+- **Customer-specific pipelines** (Heja, AZ, Widforss …) are granted via Team Access or
+  Per-User, not globally **(interpretation:** only 1 pipeline is global, and the customer
+  flows are not templates).
+- **Team roles** (from public docs): *Owner* (everything), *Developer* (API + Dashboard),
+  *Designer* (Dashboard only). **Shared billing:** the owner's balance covers all members. The
+  role is stored on the user (`org_role`).
 
-**Att ta med till ny produkt:** tre nivåer räcker långt. Team-nivån som ärver till framtida
-medlemmar är det som gör kundflöden hanterbara. Att teams bara kan få *pipelines*, inte
-enskilda API:er, är ett medvetet val värt att ompröva.
+**To carry over to a new product:** three levels go a long way. The team level, inherited by
+future members, is what makes customer flows manageable. That teams can only be granted
+*pipelines*, not individual APIs, is a deliberate choice worth reconsidering.
 
 ---
 
 ## 3. Users ⭐
 
-Fliken har tre delar: Admin Users, spärr av registreringar, och registrerade användare.
+The tab has three parts: Admin Users, sign-up blocking, and registered users.
 
-### 3.1 Registrerade användare
+### 3.1 Registered users
 
-**Inloggning är lösenordsfri:** e-post → 6-siffrig kod (`POST /login` → `POST /verify` i
-publika API:t). API-anrop autentiseras med `X-API-Key: ak_…`. Nyckeln kan roteras av användaren.
+**Login is passwordless:** email → 6-digit code (`POST /login` → `POST /verify` in the
+public API). API calls are authenticated with `X-API-Key: ak_…`. The user can rotate the key.
 
-**Skapa användare (admin):** e-post + företagsnamn → **"Create & Send Code"**. Användaren
-får en kod och verifierar sig själv.
+**Create user (admin):** email + company name → **"Create & Send Code"**. The user receives a
+code and verifies themselves.
 
-**Fält per användare:**
+**Fields per user:**
 
-| Fält | Betydelse |
+| Field | Meaning |
 |---|---|
-| `username`, `email`, `company` | Identitet. Användarnamnet härleds från e-posten **(tolkning)**. |
-| `api_key` | Användarens API-nyckel. |
-| `balance` | Förbetalt saldo i USD. Dras per anrop (`X-Cost`). |
-| `email_verified` | Har angett koden. *"Never entered a code"* = registrerad men aldrig verifierad. |
-| `org_role` | Roll i sitt team (Owner / Developer / Designer). |
-| `trial_status` | Status för provkredit. Admin kan *Grant trial* eller *Decline*. |
-| `suspended` | Avstängd; *Suspend* / *Unsuspend*. |
-| `signup_ip`, `signup_country` | Sparas vid registrering, för missbruksskydd. |
+| `username`, `email`, `company` | Identity. The username is derived from the email **(interpretation)**. |
+| `api_key` | The user's API key. |
+| `balance` | Prepaid balance in USD. Deducted per call (`X-Cost`). |
+| `email_verified` | Has entered the code. *"Never entered a code"* = registered but never verified. |
+| `org_role` | Role in their team (Owner / Developer / Designer). |
+| `trial_status` | Status of trial credit. Admin can *Grant trial* or *Decline*. |
+| `suspended` | Suspended; *Suspend* / *Unsuspend*. |
+| `signup_ip`, `signup_country` | Stored at sign-up, for abuse protection. |
 
-**Åtgärder på ett användarkort:** ✎ redigera (saldo och roll redigeras inline, **tolkning** ur
-elementens namn), *Grant trial*, *Decline*, *Suspend*/*Unsuspend*.
+**Actions on a user card:** ✎ edit (balance and role are edited inline, **interpretation**
+from the element names), *Grant trial*, *Decline*, *Suspend*/*Unsuspend*.
 
-**Filter:** All users · Verified only · Never entered a code · Balance above $0 · Trial credit
-held · Suspended. Sök på e-post, namn, företag eller IP. Listan grupperas per dag och per e-postdomän.
+**Filters:** All users · Verified only · Never entered a code · Balance above $0 · Trial credit
+held · Suspended. Search by email, name, company or IP. The list is grouped by day and by email domain.
 
-Läget 2026-09-29: 185 användare, varav 3 aldrig verifierade.
+Status 2026-09-29: 185 users, of whom 3 never verified.
 
-### 3.2 Missbruksskydd vid registrering
+### 3.2 Sign-up abuse protection
 
-- **Blocked Sign-up Domains:** registreringar från dessa e-postdomäner *nekas tyst*.
-  - Manuellt: domän + valfri anledning → *Block*.
-  - **Automatiskt:** en domän som når **3 verifierade registreringar på 24 timmar** blockeras.
-  - En publik lista över engångs-mejladresser är inbyggd i koden och syns inte i listan.
-- **Refused sign-ups:** logg över nekade registreringar, filter 24 h / 7 d / 30 d.
+- **Blocked Sign-up Domains:** sign-ups from these email domains are *silently refused*.
+  - Manually: domain + optional reason → *Block*.
+  - **Automatically:** a domain that reaches **3 verified sign-ups in 24 hours** is blocked.
+  - A public list of disposable email addresses is built into the code and not shown in the list.
+- **Refused sign-ups:** log of refused sign-ups, filter 24 h / 7 d / 30 d.
 
 ### 3.3 Admin Users
 
-- Separat inloggning från vanliga användare: **e-post + TOTP-kod** (Google Authenticator,
+- Separate login from regular users: **email + TOTP code** (Google Authenticator,
   1Password, Authy …).
-- **Första gången:** *"Enroll TOTP via bootstrap token"* — en engångstoken används för att
-  registrera autentiseringsappen.
-- Lägg till admin: e-post + namn. Per admin: *Reset TOTP*, *Remove*.
+- **First time:** *"Enroll TOTP via bootstrap token"* — a one-time token is used to register
+  the authenticator app.
+- Add admin: email + name. Per admin: *Reset TOTP*, *Remove*.
 
 ---
 
 ## 4. Servers
 
-En server är en **provider-anslutning**. API:er pekar på en server.
+A server is a **provider connection**. APIs point to a server.
 
-**Formulär (Add Server):** Name · Type · URL · credentials. Serverns typ avgör vilken
-konfigurationspanel API-formuläret visar (se 5.2).
+**Form (Add Server):** Name · Type · URL · credentials. The server's type determines which
+configuration panel the API form shows (see 5.2).
 
-**Typer som går att välja:** ComfyUI · Google Gemini · xAI (Grok) · OpenAI · RunPod Serverless ·
+**Selectable types:** ComfyUI · Google Gemini · xAI (Grok) · OpenAI · RunPod Serverless ·
 Replicate · Python (Local) · Other.
 
-**Konfigurerade servrar (7):**
+**Configured servers (7):**
 
-| Namn | Typ | URL | Config |
+| Name | Type | URL | Config |
 |---|---|---|---|
 | Pyton Scripts | python | `local` | — |
 | Replicate | replicate | — | `api_key` |
@@ -150,64 +151,64 @@ Replicate · Python (Local) · Other.
 | Gemini Video | gemini | `https://generativelanguage.googleapis.com/v1beta` | `api_key`, `model` |
 | OpenAI | openai | `https://api.openai.com/v1` | `api_key`, `model` |
 
-**Hälsokontroll (probe):** admin anropar `/admin/api/{provider}/probe` per API och sparar
-resultatet på API:t (`last_probe_status`, `…_capability`, `…_elapsed_ms`, `…_inference_tested`).
-UI visar "✓ live". Läget: 56 verified, 7 failed, 24 aldrig testade.
+**Health check (probe):** the admin calls `/admin/api/{provider}/probe` per API and stores the
+result on the API (`last_probe_status`, `…_capability`, `…_elapsed_ms`, `…_inference_tested`).
+The UI shows "✓ live". Status: 56 verified, 7 failed, 24 never tested.
 
-**Lärdom:** nycklarna lagras i klartext i serverns config och följer med i exporten. En ny
-produkt bör lagra dem i en secrets-hanterare och aldrig exportera dem.
+**Lesson:** the keys are stored in plain text in the server config and are included in the
+export. A new product should store them in a secrets manager and never export them.
 
 ---
 
 ## 5. APIs
 
-En API är **en anropbar enhet**: antingen en modell hos en provider eller ett script.
-87 st: 44 script-baserade, 43 modell-baserade (Replicate 24, Gemini 11, OpenAI 7, Grok 1).
+An API is **a callable unit**: either a model at a provider or a script.
+87 in total: 44 script-based, 43 model-based (Replicate 24, Gemini 11, OpenAI 7, Grok 1).
 
-### 5.1 Gemensamma fält (Add API)
+### 5.1 Common fields (Add API)
 
-| Fält | Betydelse |
+| Field | Meaning |
 |---|---|
-| Name, Slug, Description | Slug blir URL: `/api/process/{slug}`. Slug genereras från namnet. |
-| **AI Context** | Extra vägledning till "?"-hjälpchatten: bra parametervärden, när verktyget ska användas, modellens egenheter, vanliga fel. Knappen *Suggest* genererar ett förslag. 44 av 87 API:er har det ifyllt. |
+| Name, Slug, Description | The slug becomes the URL: `/api/process/{slug}`. The slug is generated from the name. |
+| **AI Context** | Extra guidance for the "?" help chat: good parameter values, when to use the tool, model quirks, common failures. The *Suggest* button generates a proposal. 44 of 87 APIs have it filled in. |
 | Category | Image Generation, Video, Image Editing and Cropping, Visual Intelligence, Utilities, Image Filters, Background Removal, Customer Scripts, Text Generation … |
-| **Price per Request ($)** | Vad kunden debiteras per anrop (fyra decimaler). |
-| Provider cost per request ($) | Vad providern tar av oss. *"Neither is used at charge time; they make the margin visible."* **Ifyllt på 0 av 87.** |
-| Markup override (%) | Påslag per API; tomt = standard från Pricing. Ifyllt på 0 av 87. |
-| **Parametric pricing rule** | Ersätter fast pris när den är på: pris beräknat ur request-parametrar. Se 5.3. |
-| Server | Vilken provider. Avgör konfigurationspanelen nedan. |
-| **I/O Type Declarations** | Accepted Inputs: Image / Video / Text-JSON / Audio, var och en *off → optional → required*. Output Type: Image / Video / Text-JSON / Audio / ZIP. |
-| Max Images | Hur många bildfiler primär-inputen tar (1 = en, högre = flera, max 20). |
-| Canva | Flagga för Canva-integration (16 API:er). |
-| **Parameters** | Lista över parametrar. *Scan JSON* / *Scan Script* hittar dem automatiskt. Se 5.4. |
+| **Price per Request ($)** | What the customer is charged per call (four decimals). |
+| Provider cost per request ($) | What the provider charges us. *"Neither is used at charge time; they make the margin visible."* **Filled in on 0 of 87.** |
+| Markup override (%) | Markup per API; empty = default from Pricing. Filled in on 0 of 87. |
+| **Parametric pricing rule** | Replaces the flat price when enabled: price computed from request parameters. See 5.3. |
+| Server | Which provider. Determines the configuration panel below. |
+| **I/O Type Declarations** | Accepted Inputs: Image / Video / Text-JSON / Audio, each *off → optional → required*. Output Type: Image / Video / Text-JSON / Audio / ZIP. |
+| Max Images | How many image files the primary input accepts (1 = one, higher = several, max 20). |
+| Canva | Flag for the Canva integration (16 APIs). |
+| **Parameters** | List of parameters. *Scan JSON* / *Scan Script* find them automatically. See 5.4. |
 
-**Innan sparning:** en *pre-flight validation* körs, *"so a broken API is caught here rather
-than by a customer"*. Det finns också en **Test Run**-panel: ladda upp bild, skriv prompt,
-överskrid parametrar, se körloggen.
+**Before saving:** a *pre-flight validation* runs, *"so a broken API is caught here rather
+than by a customer"*. There is also a **Test Run** panel: upload an image, write a prompt,
+override parameters, see the run log.
 
-### 5.2 Konfiguration per servertyp
+### 5.2 Configuration per server type
 
-| Servertyp | Fält |
+| Server type | Fields |
 |---|---|
-| **Gemini** | Modell (*Fetch Models* listar tillgängliga) · Response Type: Image / Video / Text / Auto (Image + Text) · Temperature, Top-P, Top-K, Max Output Tokens · Aspect Ratio (1:1, 3:4, 4:3, 9:16, 16:9) · Image Size (512, 1K, 2K, 4K) · Num Images (1–4) · Safety Filter · Negative Prompt · **Prompt** |
-| **xAI (Grok)** | Modell (*Fetch Models*) · Response Type: Text / Image / Video / Auto · Temperature, Top-P, Max Tokens, Frequency/Presence Penalty · **Prompt** |
-| **OpenAI** | Modell (*Fetch Models*) · Response Type: Text / Image · Temperature, Top-P, Max Tokens, Penalties · Size (auto, 1024², 1536×1024, 1024×1536 …) · Quality (Standard, HD, Low, Medium, High, Auto) · Background (Transparent, Opaque, Auto) · Style (Vivid, Natural) · **Prompt** |
-| **Replicate** | Sök i Replicate-katalogen eller ange model-ID (`bytedance/seedream-4`) → *Fetch Schema* hämtar modellens inputs automatiskt och mappar dem till kanoniska namn (`prompt`, `image`) · Image Field (auto-detect) · Image Upload: Auto (Data URL för video, Files API annars) / tvinga Files API / tvinga Data URL · Output Type |
-| **Python (Local)** | Script (från Scripts-fliken) · Timeout (s, standard 30, max 300) · Output Type (inkl. ZIP) |
-| **ComfyUI** | Workflow JSON (ComfyUI API-format). `LoadImage` byts automatiskt mot `{{INPUT_IMAGE}}`. |
+| **Gemini** | Model (*Fetch Models* lists the available ones) · Response Type: Image / Video / Text / Auto (Image + Text) · Temperature, Top-P, Top-K, Max Output Tokens · Aspect Ratio (1:1, 3:4, 4:3, 9:16, 16:9) · Image Size (512, 1K, 2K, 4K) · Num Images (1–4) · Safety Filter · Negative Prompt · **Prompt** |
+| **xAI (Grok)** | Model (*Fetch Models*) · Response Type: Text / Image / Video / Auto · Temperature, Top-P, Max Tokens, Frequency/Presence Penalty · **Prompt** |
+| **OpenAI** | Model (*Fetch Models*) · Response Type: Text / Image · Temperature, Top-P, Max Tokens, Penalties · Size (auto, 1024², 1536×1024, 1024×1536 …) · Quality (Standard, HD, Low, Medium, High, Auto) · Background (Transparent, Opaque, Auto) · Style (Vivid, Natural) · **Prompt** |
+| **Replicate** | Search the Replicate catalog or enter a model ID (`bytedance/seedream-4`) → *Fetch Schema* fetches the model's inputs automatically and maps them to canonical names (`prompt`, `image`) · Image Field (auto-detect) · Image Upload: Auto (Data URL for video, Files API otherwise) / force Files API / force Data URL · Output Type |
+| **Python (Local)** | Script (from the Scripts tab) · Timeout (s, default 30, max 300) · Output Type (incl. ZIP) |
+| **ComfyUI** | Workflow JSON (ComfyUI API format). `LoadImage` is automatically replaced with `{{INPUT_IMAGE}}`. |
 
-**Promptmallar:** för Gemini, Grok och OpenAI skrivs prompten i API:t med platshållare:
-- `{{PARAM_NAME}}` — ersätts med en konfigurerbar parameter.
-- `{{PROMPT}}` — ersätts med kundens egen ad-hoc-prompt.
+**Prompt templates:** for Gemini, Grok and OpenAI the prompt is written in the API with placeholders:
+- `{{PARAM_NAME}}` — replaced with a configurable parameter.
+- `{{PROMPT}}` — replaced with the customer's own ad-hoc prompt.
 
-Så kan samma modell finnas som flera API:er med olika inbakade prompts, till exempel
-"Nano Banana Pro Inpainting" och "Nano Banana Pro Reference Image".
+This way the same model can exist as several APIs with different baked-in prompts, for example
+"Nano Banana Pro Inpainting" and "Nano Banana Pro Reference Image".
 
-### 5.3 Parametrisk prissättning
+### 5.3 Parametric pricing
 
-JSON-regel som räknar ut priset från anropets parametrar. Förinställda typer: *Veo (request
+A JSON rule that computes the price from the call's parameters. Preset types: *Veo (request
 params)*, *Replicate-by-seconds (reconciled)*, *Token-based (LLM, not yet reconciled)*, *Flat*.
-Exempel ur formulärets platshållare:
+Example from the form's placeholder:
 
 ```json
 {"kind": "formula", "base": 0.05, "min": 0.10, "max": 20.00,
@@ -215,40 +216,40 @@ Exempel ur formulärets platshållare:
  "multipliers": [{"param": "resolution", "values": {"720p": 1.0, "1080p": 2.0, "4k": 6.0}, "default": 1.0}]}
 ```
 
-Pris = base + Σ(param × rate), gånger multiplikatorer, klämt mellan min och max **(tolkning**
-av formatet). En förhandsvisning räknar ut kostnaden för exempelparametrar. Publika API:t har
-`POST /process/{slug}/estimate` för samma sak.
+Price = base + Σ(param × rate), times multipliers, clamped between min and max
+**(interpretation** of the format). A preview computes the cost for sample parameters. The
+public API has `POST /process/{slug}/estimate` for the same thing.
 
-### 5.4 Parametrar
+### 5.4 Parameters
 
-Per parameter: `name`, `expose_name` (publikt namn om det skiljer sig), `description`,
+Per parameter: `name`, `expose_name` (public name if it differs), `description`,
 `default_value`, `required`, `is_image`, `type` (string / int / float).
 
 ---
 
 ## 6. Scripts
 
-Python-källkod som körs av servern "Python (Local)". Fullständig källkod för alla 46 script
-finns i den sanerade exporten (`docs/export/*.sanitized.json`). Kontraktet för hur ett script
-skrivs finns i `guidelines/SCRIPT_GUIDELINES.md`.
+Python source code run by the "Python (Local)" server. Full source code for all 46 scripts
+is in the sanitized export (`docs/export/*.sanitized.json`). The contract for how a script is
+written is in `guidelines/SCRIPT_GUIDELINES.md`.
 
-**Formulär (Add Script):**
-- Name (filnamn utan `.py`) · Description.
-- **Packages**, bara från en tillåten lista: `Pillow`, `replicate`, `numpy`,
+**Form (Add Script):**
+- Name (filename without `.py`) · Description.
+- **Packages**, only from an allowlist: `Pillow`, `replicate`, `numpy`,
   `opencv-python-headless`, `scikit-image`, `cairosvg`, `scipy`, `pillow-heif`.
-- **Miljövariabler** (via `os.environ`): `ANTHROPIC_API_KEY`, `GEMINI_API_KEY`,
-  `OPENAI_API_KEY`, `REPLICATE_API_TOKEN`, `XAI_API_KEY`. Ett script kan alltså själv anropa
-  modeller: `nb_pro_inpaint` och `nb_pro_reference_image` anropar Gemini, och
-  `detect_and_crop`, `correct_colors` och `Detect and Remove Background` använder
-  `replicate`-biblioteket (som läser `REPLICATE_API_TOKEN`).
-- Source Code: klistra in eller *Upload .py*.
-- **Ask Claude** / **Fix it**: AI-assistent som skriver eller ändrar scriptet utifrån en
-  beskrivning.
+- **Environment variables** (via `os.environ`): `ANTHROPIC_API_KEY`, `GEMINI_API_KEY`,
+  `OPENAI_API_KEY`, `REPLICATE_API_TOKEN`, `XAI_API_KEY`. So a script can call models
+  itself: `nb_pro_inpaint` and `nb_pro_reference_image` call Gemini, and
+  `detect_and_crop`, `correct_colors` and `Detect and Remove Background` use the
+  `replicate` library (which reads `REPLICATE_API_TOKEN`).
+- Source Code: paste in or *Upload .py*.
+- **Ask Claude** / **Fix it**: AI assistant that writes or changes the script from a
+  description.
 
-**Test Script:** ladda upp en bild + parametrar som JSON (`{"padding": "20"}`) → *Run Test*.
+**Test Script:** upload an image + parameters as JSON (`{"padding": "20"}`) → *Run Test*.
 
-**Från script till anropbart verktyg:** skapa en API med servern "Pyton Scripts", välj scriptet,
-sätt timeout och output-typ, och lägg till parametrar (*Scan Script* hittar dem).
+**From script to callable tool:** create an API with the "Pyton Scripts" server, choose the
+script, set timeout and output type, and add parameters (*Scan Script* finds them).
 
 ---
 
@@ -257,102 +258,102 @@ sätt timeout och output-typ, och lägg till parametrar (*Scan Script* hittar de
 *"Build multi-step pipelines that chain tools together. Metadata (bounding boxes, colors,
 flags) can be passed between steps."*
 
-**Formulär (Add Pipeline):** Name · Slug (`/api/pipeline/{slug}`) · Description · Preview image
-(för template-kortet) · flaggor **Active**, **Template**, **Copyable**. Därunder: *Available
-Workflows* (klicka för att lägga till som nod) och *Pipeline Nodes*.
+**Form (Add Pipeline):** Name · Slug (`/api/pipeline/{slug}`) · Description · Preview image
+(for the template card) · flags **Active**, **Template**, **Copyable**. Below that: *Available
+Workflows* (click to add as a node) and *Pipeline Nodes*.
 
-**Test Flow:** *Run Flow* kör hela kedjan; *Debug* kör steg för steg (publikt:
+**Test Flow:** *Run Flow* runs the whole chain; *Debug* runs step by step (public:
 `POST /flow/{slug}/debug`).
 
-### 7.1 Nodtyper
+### 7.1 Node types
 
-Ur `flow_config` för alla flöden: 82 workflow-noder, 7 condition, 3 gate.
+From `flow_config` across all flows: 82 workflow nodes, 7 condition, 3 gate.
 
-| Typ | Fält | Beteende |
+| Type | Fields | Behavior |
 |---|---|---|
-| **workflow** | `workflow` (API-slug), `params` | Kör en API. |
-| **condition** | `condition_field`, `condition_value`, `skip_count` | Om fältet i föregående nods JSON-utdata har värdet → **hoppa över nästa N noder**. T.ex. `is_high_resolution = true, skip 2` hoppar över uppskalningen. |
-| **gate** | `gate_prompt`, `gate_input`, `yes_message`, `no_message`, `rejected_message`, `gate_branch_yes`, `gate_expose` | LLM svarar JA/NEJ på en fråga om bilden (Quality Gate, ~$0.001). NEJ stoppar flödet med `no_message`. `rejected_message` om säkerhetsfiltret blockerar. `gate_branch_yes: "stop"` avslutar även vid JA **(tolkning)**. |
+| **workflow** | `workflow` (API slug), `params` | Runs an API. |
+| **condition** | `condition_field`, `condition_value`, `skip_count` | If the field in the previous node's JSON output has the value → **skip the next N nodes**. E.g. `is_high_resolution = true, skip 2` skips the upscaling. |
+| **gate** | `gate_prompt`, `gate_input`, `yes_message`, `no_message`, `rejected_message`, `gate_branch_yes`, `gate_expose` | An LLM answers YES/NO to a question about the image (Quality Gate, ~$0.001). NO stops the flow with `no_message`. `rejected_message` if the safety filter blocks. `gate_branch_yes: "stop"` also ends the flow on YES **(interpretation)**. |
 
-`output_node` anger vilken nods resultat flödet returnerar.
+`output_node` specifies which node's result the flow returns.
 
-### 7.2 Parametrar på en nod: fem sätt att binda
+### 7.2 Parameters on a node: six ways to bind
 
-Ur hjälptexten: *"Configure each parameter as Expose (user provides via API), Fixed (baked in),
+From the help text: *"Configure each parameter as Expose (user provides via API), Fixed (baked in),
 Wire ← prev (from previous node output), Default, or Omit (remove from request)."*
 
-| Bindning | I `flow_config` | Betydelse | Antal |
+| Binding | In `flow_config` | Meaning | Count |
 |---|---|---|---|
-| **Fixed** | `{"fixed": "…"}` | Inbakat värde, t.ex. en prompt. | 308 |
-| **Wire** | `{"from_node": "node_4", "is_image": true}` | Tar utdata från en tidigare nod. | 54 |
-| **Original** | `{"use_original": true, "is_image": true}` | Tar pipelinens *ursprungliga* inbild, oavsett steg. | 6 |
-| **Expose** | `{"expose": "image", "required": true, "default": "…"}` | Blir en parameter i pipelinens publika API. | 39 |
-| **Omit** | `{"omit": true}` | Parametern skickas inte alls. | 51 |
-| **Default** | `{}` | API:ts eget standardvärde gäller. | 20 |
+| **Fixed** | `{"fixed": "…"}` | Baked-in value, e.g. a prompt. | 308 |
+| **Wire** | `{"from_node": "node_4", "is_image": true}` | Takes the output of an earlier node. | 54 |
+| **Original** | `{"use_original": true, "is_image": true}` | Takes the pipeline's *original* input image, regardless of step. | 6 |
+| **Expose** | `{"expose": "image", "required": true, "default": "…"}` | Becomes a parameter in the pipeline's public API. | 39 |
+| **Omit** | `{"omit": true}` | The parameter is not sent at all. | 51 |
+| **Default** | `{}` | The API's own default value applies. | 20 |
 
-En condition-nod släpper igenom bilden: nästa nod wirar `from_node` till condition-noden.
+A condition node passes the image through: the next node wires `from_node` to the condition node.
 
-**Lärdom för ny produkt:** den här bindningsmodellen är kärnan i "kedja modeller och script".
-*Original*-bindningen (jämför mot källbilden efter generering) är det som gör t.ex. Hejas
-färgkorrigering möjlig.
+**Lesson for a new product:** this binding model is the core of "chaining models and scripts".
+The *Original* binding (compare against the source image after generation) is what makes e.g.
+Heja's color correction possible.
 
-Heja-flödet nod för nod: se `docs/flows/HEJA.md` (kommer).
+Heja and AZ flows: see `docs/flows/HEJA.md` and `docs/flows/AZ.md`.
 
 ---
 
 ## 8. Usage & Billing
 
-Datumfilter (från–till) → två tabeller:
+Date filter (from–to) → two tables:
 
-| Tabell | Kolumner |
+| Table | Columns |
 |---|---|
-| **By User** | Förbrukning per användare (visas inte här: kunddata). |
-| **By API** | `workflow_slug`, `workflow_name`, `total_requests`, `success_count`, `error_count`, `total_cost`. Pipelines syns som `flow:{slug}`. |
+| **By User** | Consumption per user (not shown here: customer data). |
+| **By API** | `workflow_slug`, `workflow_name`, `total_requests`, `success_count`, `error_count`, `total_cost`. Pipelines appear as `flow:{slug}`. |
 
-`total_cost` är det kunden debiterats, inte providerkostnaden, som aldrig registrerades (5.1).
+`total_cost` is what the customer was charged, not the provider cost, which was never recorded (5.1).
 
-**Exempel, 2026-08-31 till 2026-09-29** (74 API:er/pipelines med trafik), de tre största:
+**Example, 2026-08-31 to 2026-09-29** (74 APIs/pipelines with traffic), the three largest:
 
-| API / pipeline | Anrop | Fel | Debiterat |
+| API / pipeline | Calls | Errors | Charged |
 |---|---|---|---|
 | Nano Banana 2 | 4 896 | 50 | $242.30 |
 | `flow:widforss-produktbild` | 2 900 | 32 | $86.04 |
 | Gemini 3.1 Flash Lite Preview | 1 180 | 1 | $47.16 |
 
-**Hur debitering fungerar** (ur publika docs): förbetalt saldo; varje svar har `X-Cost` och
-`X-Balance-Remaining`. Påfyllning via Stripe ($10 / $50 / $100) och auto-refill när saldot
-understiger $5.
+**How billing works** (from public docs): prepaid balance; every response has `X-Cost` and
+`X-Balance-Remaining`. Top-up via Stripe ($10 / $50 / $100) and auto-refill when the balance
+drops below $5.
 
 ---
 
 ## 9. Monitor
 
-Tidsfönster 1 h / 6 h / 24 h / 48 h / 7 d.
+Time window 1 h / 6 h / 24 h / 48 h / 7 d.
 
-| Del | Innehåll |
+| Part | Content |
 |---|---|
 | **Stats Cards** | total_requests, success/error_count, error_rate, avg_ms, **p95_ms**, total_cost |
-| **Live execution capacity** | Vem som håller körplatserna just nu: `in_flight`, `holders`. **Gränser: 8 samtidiga körningar totalt, 4 per användare.** |
-| Hourly Chart | requests, errors, avg_ms per timme |
-| Error Breakdown | vanligaste felet per API/pipeline med antal |
-| Slowest Requests | långsammaste anropen |
-| Recent Errors | senaste felen med felmeddelande |
-| **AI Analysis** | AI-sammanfattning av felbilden |
+| **Live execution capacity** | Who holds the execution slots right now: `in_flight`, `holders`. **Limits: 8 concurrent executions in total, 4 per user.** |
+| Hourly Chart | requests, errors, avg_ms per hour |
+| Error Breakdown | most common error per API/pipeline with count |
+| Slowest Requests | the slowest calls |
+| Recent Errors | latest errors with error message |
+| **AI Analysis** | AI summary of the error picture |
 
-**Exempel, 24 h till 2026-09-29:** 296 anrop, 6.4 % fel, snitt 8.7 s, p95 26.7 s, $8.66.
-Alla 19 fel kom från ett flöde (`widforss-produktbild`): Replicate-bakgrundsborttagning
-avvisar AVIF (415). **Lärdom:** normalisera bildformat innan första providern.
+**Example, 24 h to 2026-09-29:** 296 calls, 6.4 % errors, average 8.7 s, p95 26.7 s, $8.66.
+All 19 errors came from one flow (`widforss-produktbild`): Replicate background removal
+rejects AVIF (415). **Lesson:** normalize the image format before the first provider.
 
-**Avvikelse:** publika docs säger 1 samtidig körning per användare och 2 totalt; admin visar
-4 och 8. Admin-värdet är aktuellt.
+**Discrepancy:** public docs say 1 concurrent execution per user and 2 in total; the admin shows
+4 and 8. The admin value is current.
 
 ---
 
-## 10. Öppna frågor
+## 10. Open questions
 
-- **Pipeline-editorns UI** (nodlistan, hur man väljer bindning) syns bara med ett flöde
-  öppet. Datan är dokumenterad (7.1–7.2); själva editorn är inte sparad.
-- **User-delen** (vanlig inloggning: dashboard, My Pipelines, API-nycklar) är inte crawlad.
-- **Pricing-fliken** (prenumerationer, *What if?*) är medvetet utelämnad: inte lanserat.
-- **Eval-plattformen** (eval.apiai.me) och **batch** finns bara i publika docs.
-- **Providerkostnader** registrerades aldrig; marginal per API är okänd.
+- **The pipeline editor UI** (the node list, how a binding is chosen) is only visible with a
+  flow open. The data is documented (7.1–7.2); the editor itself is not saved.
+- **The user part** (regular login: dashboard, My Pipelines, API keys) has not been crawled.
+- **The Pricing tab** (subscriptions, *What if?*) is deliberately left out: not launched.
+- **The eval platform** (eval.apiai.me) and **batch** exist only in the public docs.
+- **Provider costs** were never recorded; the margin per API is unknown.

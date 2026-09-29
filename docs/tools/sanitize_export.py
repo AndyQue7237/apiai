@@ -14,7 +14,8 @@ from pathlib import Path
 SECRET_KEY_RE = re.compile(r"(api[_-]?key|token|secret|password|bearer|credential)", re.I)
 SECRET_VALUE_RE = re.compile(
     r"(sk-(proj|ant)-[A-Za-z0-9_-]{20,}|r8_[A-Za-z0-9]{20,}|AIza[0-9A-Za-z_-]{30,}"
-    r"|xai-[A-Za-z0-9]{20,}|hf_[A-Za-z0-9]{20,}|(sk|rk)_(live|test)_[A-Za-z0-9]{10,})"
+    r"|xai-[A-Za-z0-9]{20,}|hf_[A-Za-z0-9]{20,}|(sk|rk)_(live|test)_[A-Za-z0-9]{10,}"
+    r"|ak_[A-Za-z0-9]{16,})"  # apiai.me user API keys
 )
 REDACTED = "<REDACTED>"
 

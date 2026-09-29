@@ -1,4 +1,4 @@
-<!-- public-docs-summary — en sammanfattning av https://apiai.me/docs, hämtad 2026-09-29 med WebFetch. SAMMANFATTAD, inte ordagrann: kontrollera exakta parametrar mot källan. -->
+<!-- public-docs-summary — a summary of https://apiai.me/docs, fetched 2026-09-29 with WebFetch. SUMMARIZED, not verbatim: check exact parameters against the source. -->
 
 # apiai.me API Documentation Structure
 

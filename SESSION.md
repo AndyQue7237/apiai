@@ -33,6 +33,8 @@ nästa steg är att **skriva** dokumenten.
   AZ exporterar Andreas manuellt senare (senaste versionen).
 - Ingen kunddata och inga nycklar i docs, någonsin.
 - **Scripten får sparas ordagrant med full kod** (Andreas byggt dem själv, se HANDOVER.md).
+- **All dokumentation på engelska**, konversation på svenska (projektregel i CLAUDE.md +
+  `.claude/rules/00-project-conventions.md`). `docs/` översatt 2026-09-29.
 
 ### Nästa steg
 

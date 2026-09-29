@@ -76,4 +76,6 @@ These apply to ALL pipelines. Discovered through heja, carpx, az-design work.
 
 - **All code** (variables, functions, logs) in **English**
 - **All comments** in **English**
-- User docs can be Swedish where appropriate
+- **All documentation** in **English** (`docs/`, `guidelines/`, READMEs, WINNER/setup docs)
+- **Conversation** with Andreas in **Swedish**; `SESSION.md` working notes may stay Swedish
+- Existing Swedish docs are translated when they are substantially edited (decided 2026-09-29)
