@@ -1,8 +1,13 @@
 # Session Memory — apiai
 
-Senast uppdaterad: 2026-09-29
+Senast uppdaterad: 2026-10-06
 
-> **NYTT FOKUS 2026-09-29: dokumentera apiai inför en ny produkt.** Läs
+> **FOKUS FLYTTAT 2026-10-06: den nya produkten heter flowpx och har eget repo,
+> `~/projects/flowpx`.** Läs dess `SESSION.md`. Kontextfilerna (PRODUCT, SCOPE,
+> WAYS_OF_WORKING) är klara och apiai-dokumentationen är arkiverad där i `docs/apiai/`.
+> Detta repo är nu referens; `docs/crawl/` finns bara här lokalt (radera inte).
+
+> **2026-09-29: dokumentera apiai inför en ny produkt.** Läs
 > **[`docs/HANDOVER.md`](docs/HANDOVER.md)** först. Sessionen 2026-09-18 längre ner är historik.
 
 ## Aktuellt fokus (2026-09-29): apiai-dokumentation — källorna är insamlade
@@ -49,6 +54,10 @@ nästa steg är att **skriva** dokumenten.
 - Andreas roterar providernycklarna (Replicate, Gemini, xAI, OpenAI).
 - Andreas lägger in `autoMode.allow`-regeln i `.claude/settings.local.json` (se konversation).
 - **Steg 2: planera den nya produkten**, med `docs/` som underlag (börja i Explore-fasen).
+  Andreas skriver först en brief (kund, vad produkten ska göra, layout; sedan db, hosting m.m.).
+- Senare: rensad export av alla `flow_config` (27 admin + 17 egna flöden) ur
+  `docs/crawl/`, som bara finns lokalt. **Radera inte `docs/crawl/` innan dess.**
+- Övervägt: be Widforss om export av `widforss-produktbild` (2 900 anrop/mån, ej crawlad).
 
 ### Scratch (gitignorerat, `docs/scratch/`)
 
